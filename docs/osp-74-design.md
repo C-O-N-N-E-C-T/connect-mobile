@@ -37,7 +37,17 @@ Implementation notes (deviations found while coding, 2026-11-19):
 - supabase-kt's own logger is off (`LogLevel.NONE`): its exception messages include request URLs and
   masked headers.
 - Extra files not in section 2: `util/AppLogger.kt`, `ui/RescuerAuthRoute.kt` (state -> screen),
-  `src/test/.../security/NetworkSecurityConfigTest.kt`.
+  `src/test/.../security/NetworkSecurityConfigTest.kt`, `data/supabase/LazyAuthGateway.kt` (R8).
+
+Review fixes (2026-11-19, `.orkestrator/osp-74/review.md`; R1 and R2 change the design, both approved
+by the user; R13 "debug fake-backend banner" was declined and is not implemented):
+- R8: the SupabaseClient was in fact created eagerly (the ViewModel factory read the lazy property).
+  `AppContainer.authGateway` is now a `LazyAuthGateway` that builds the client on first use, so a
+  cold start into the mission screen creates no client and supabase-kt does not retry token
+  refreshes every 10 s during an offline deployment. `alwaysAutoRefresh` is unchanged (OSP-75).
+- R11: client creation catches every `Exception` (supabase-kt throws `IllegalStateException` for a
+  URL such as `…/auth/v1`), so a wrong `SUPABASE_URL` shows "not configured" instead of crashing.
+  The builder is `SupabaseKtAuthGateway.createOrNull(...)`, shared with the tests.
 
 ## 1. Toolchain and library versions (verified 2026-11-19)
 
@@ -83,7 +93,7 @@ app/src/main/res/xml/data_extraction_rules.xml     # exclude everything from clo
 app/src/main/res/values/strings.xml     app/src/main/res/values-tr/strings.xml
 app/src/main/java/com/connect/mobile/
   ConnectApplication.kt          # creates AppContainer
-  AppContainer.kt                # manual DI; builds SupabaseClient lazily only if configured
+  AppContainer.kt                # manual DI; builds SupabaseClient lazily (on first use) only if configured
   MainActivity.kt                # setContent { ConnectTheme { RescuerAuthRoute(...) } }
   config/AppConfig.kt            # BuildConfig -> AppConfig(isConfigured = all three values non-blank)
   data/session/SessionStore.kt               # interface + StoredGrant

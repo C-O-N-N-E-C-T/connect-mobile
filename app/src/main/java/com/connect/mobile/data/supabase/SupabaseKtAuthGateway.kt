@@ -1,14 +1,21 @@
 package com.connect.mobile.data.supabase
 
 import com.connect.mobile.auth.AuthError
+import com.connect.mobile.data.session.SessionStore
 import com.connect.mobile.data.session.StoreBackedSessionManager
 import com.connect.mobile.util.AppLogger
 import com.connect.mobile.util.causeChainMessages
 import io.github.jan.supabase.auth.Auth
+import io.github.jan.supabase.auth.MemoryCodeVerifierCache
+import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.SignOutScope
 import io.github.jan.supabase.auth.exception.AuthRestException
 import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.exceptions.RestException
+import io.github.jan.supabase.logging.LogLevel
+import io.ktor.client.engine.HttpClientEngine
+import io.ktor.client.engine.okhttp.OkHttp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
@@ -81,6 +88,45 @@ class SupabaseKtAuthGateway(
         auth.stopAutoRefreshForCurrentSession()
         auth.clearSession()
         auth.stopAutoRefreshForCurrentSession()
+    }
+
+    companion object {
+        /**
+         * Builds the SupabaseClient with the app's Auth configuration (design 3.2). Returns null for an
+         * unusable config: supabase-kt throws IllegalArgumentException / IllegalStateException (e.g. a
+         * SUPABASE_URL containing "auth/v1"), and the app must then show "not configured", not crash.
+         */
+        fun createOrNull(
+            supabaseUrl: String,
+            supabaseAnonKey: String,
+            store: SessionStore,
+            log: AppLogger = AppLogger.NONE,
+            engine: HttpClientEngine = OkHttp.create(),
+            enableLifecycleCallbacks: Boolean = true,
+            initTimeoutMs: Long = 5_000,
+        ): SupabaseKtAuthGateway? = try {
+            val sessionManager = StoreBackedSessionManager(store)
+            val client = createSupabaseClient(supabaseUrl, supabaseAnonKey) {
+                // Same OkHttp engine type as the backend client, so the Network Security Config covers it.
+                httpEngine = engine
+                // supabase-kt exception/log messages can include request URLs and (masked) headers:
+                // keep its logger off; AppLogger covers our own diagnostics without tokens.
+                defaultLogLevel = LogLevel.NONE
+                install(Auth) {
+                    // Tokens live only in SessionStore, not in plaintext SharedPreferences (design 3.2).
+                    this.sessionManager = sessionManager
+                    codeVerifierCache = MemoryCodeVerifierCache()
+                    this.enableLifecycleCallbacks = enableLifecycleCallbacks
+                    // TODO(OSP-75): suspend auto-refresh while offline.
+                }
+            }
+            SupabaseKtAuthGateway(client.auth, sessionManager, log, initTimeoutMs)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            log.debug("invalid Supabase config: ${e.causeChainMessages()}")
+            null
+        }
     }
 }
 
