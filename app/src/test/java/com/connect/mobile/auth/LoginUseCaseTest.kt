@@ -68,6 +68,7 @@ class LoginUseCaseTest {
     @Test fun backendErrorsAreMappedWithTeardown() = runTest {
         val cases = listOf(
             BackendError.Http(401, "UNAUTHENTICATED", null) to AuthError.SessionRejected,
+            BackendError.Http(401, null, null) to AuthError.SessionRejected, // non-JSON 401
             BackendError.Http(403, "ACCOUNT_DISABLED", null) to AuthError.AccountDisabled,
             BackendError.Http(403, "DEVICE_REVOKED", null) to AuthError.DeviceRevoked,
             BackendError.Http(403, "SESSION_NOT_BOUND", null) to AuthError.Server,

@@ -157,6 +157,11 @@ class RescuerAuthViewModelTest {
         assertEquals(AuthUiState.LoginIdle(error = AuthError.Server), vm.state.value)
     }
 
+    @Test fun loginFormToStringHidesPassword() {
+        val text = LoginForm(email = "r@connect.internal", password = "secret-pw").toString()
+        assertTrue(text, "secret-pw" !in text)
+    }
+
     @Test fun endMissionIgnoredOutsideMission() = runTest(dispatcher) {
         val vm = newViewModel()
         vm.endMission()

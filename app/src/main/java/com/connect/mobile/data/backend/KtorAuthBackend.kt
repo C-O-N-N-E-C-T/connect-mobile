@@ -67,6 +67,7 @@ class KtorAuthBackend(
                 BackendResult.Err(BackendError.Malformed)
             }
         }
+        // OSP-60 ASSUMPTION: non-2xx bodies use the unified error contract {error_code, message}; anything else is an error without a code — see docs/osp-60-contract-assumptions.md
         val error = try {
             HttpClientFactory.json.decodeFromString(ErrorBody.serializer(), response.bodyAsText())
         } catch (e: CancellationException) {

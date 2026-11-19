@@ -29,7 +29,9 @@ Implementation notes (deviations found while coding, 2026-11-19):
   `SUPABASE_URL` + `SUPABASE_ANON_KEY` are enough (section 3.7 said all three).
 - A debug-only `AppLogger` (`adb logcat -s CONNECT`) logs the cause chain of network failures, so the
   OS message "CLEARTEXT communication … not permitted" is visible (section 7, manual check 4). Tokens,
-  passwords, headers and bodies are never logged.
+  passwords, headers and bodies are never logged. For supabase-kt network failures this includes the
+  `HttpRequestException` message itself (request URL, method and the OS message; review R17), because
+  that exception has no cause.
 - `AuthError` was added in 1.3 (the gateway maps Supabase errors to it), not 1.4.
 - AGP 9 creates unit-test tasks only for the tested build type; `gradle.properties` sets
   `android.onlyEnableUnitTestForTheTestedBuildType=false` so `testReleaseUnitTest` exists (it proves
@@ -275,7 +277,7 @@ const val GRANT_JSON_KEY = "offline_mission_grant"
 | Supabase `over_request_rate_limit` / HTTP 429; backend 429 `RATE_LIMITED` | `RateLimited` | yes | "Too many attempts. Wait a few minutes and try again." |
 | `HttpRequestException` / `HttpRequestTimeoutException` / `IOException` (incl. a cleartext block) | `Network` | yes (if signed in) | "No connection. Field Rescuer login needs internet before deployment." |
 | 200 with `role` ≠ `rescuer` (coordinator/administrator), or 403 `ROLE_FORBIDDEN` | `RoleNotAllowed` | **yes** | "Field Rescuer Mode is only for rescuer accounts. Coordinators and administrators must use the web dashboard." |
-| 401 `UNAUTHENTICATED` | `SessionRejected` | yes | "Your session could not be verified. Please sign in again." |
+| 401 `UNAUTHENTICATED`, or any 401 without a known code (review R16) | `SessionRejected` | yes | "Your session could not be verified. Please sign in again." |
 | 403 `ACCOUNT_DISABLED` | `AccountDisabled` | yes | (as above) |
 | 403 `DEVICE_REVOKED` | `DeviceRevoked` | yes | "This device has been revoked. Contact your administrator." |
 | 400 `VALIDATION_ERROR` | `RequestRejected` | yes | "Login request was rejected. Update the app or contact your coordinator." |
@@ -420,8 +422,8 @@ Commit after each checkpoint (`OSP-74: …`), staging explicit paths only (never
 - `DeviceIdProviderTest`: created once, stable across store instances, valid v4 UUID, 20 concurrent calls return one value.
 - `StoreBackedSessionManagerTest`: `UserSession` round-trip; empty load throws `NoSessionFoundException`; `deleteSession` keeps grant and `device_id`.
 - `KtorAuthBackendTest` (`MockEngine`): path, Bearer header, JSON body; 200 rescuer+grant and 200 coordinator parsed; every section 3.6 `error_code`; non-JSON/unknown error body; `IOException` maps to `Network`.
-- `LoginUseCaseTest`: rescuer stores grant (sends `device_id`, `device_name`); coordinator/administrator/`ROLE_FORBIDDEN` give `RoleNotAllowed` with full teardown in order (backend logout, signOut, clearLocalSession, clearAuth); 401/403s/429/400/5xx mapped with teardown; bad/over-72 h/missing grant gives `GrantInvalid`; `invalid_credentials` gives `BadCredentials` with nothing stored.
-- `LogoutUseCaseTest`: backend throwing/hanging/no token and `signOut()` throwing `HttpRequestException` still wipe locally; `/auth/logout` runs before `signOut()`; `device_id`, a sentinel DataStore key and a sentinel "victim DB" file are untouched; caller cancellation mid-logout still completes the wipe; gateway initialisation is awaited before clearing (fake gateway whose init completes late).
+- `LoginUseCaseTest`: rescuer stores grant (sends `device_id`, `device_name`); coordinator/administrator/`ROLE_FORBIDDEN` give `RoleNotAllowed` with full teardown in order (clearGrant, backend logout, signOut, clearLocalSession, clearAuth); 401/403s/429/400/5xx mapped with teardown; bad/over-72 h/missing grant gives `GrantInvalid`; `invalid_credentials` gives `BadCredentials` with nothing stored.
+- `LogoutUseCaseTest`: backend throwing/hanging/no token and `signOut()` throwing `HttpRequestException` still wipe locally; `/auth/logout` runs before `signOut()`; `device_id`, a sentinel DataStore key and a sentinel "victim DB" file are untouched; caller cancellation mid-logout still completes the wipe; gateway initialisation is awaited before clearing (fake gateway whose init completes late); the grant is already gone while `backend.logout` runs (R1); a `CancellationException` or error from `clearLocalSession()` still lets `clearAuth()` run (R9).
 - `SessionBootstrapTest`: grant leads to `MissionActive`; session without grant is wiped and leads to `LoginIdle`; empty store leads to `LoginIdle`.
 - `RescuerAuthViewModelTest` (`Dispatchers.setMain`): section 4.1 transitions; password cleared; double submit ignored.
 - `AuthErrorTextTest` (every `AuthError` has a string); `ExpiryFormatterTest` (fixed Instant, `Europe/Istanbul`, EN/TR locales).

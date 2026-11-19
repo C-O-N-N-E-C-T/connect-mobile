@@ -55,9 +55,10 @@ class SupabaseKtAuthGateway(
             log.debug("supabase sign-in rejected: ${e.error} (${e.statusCode})")
             SignInOutcome.Failure(SupabaseErrorMapper.fromRest(null, e.statusCode))
         } catch (e: IOException) {
-            // supabase-kt HttpRequestException / timeouts / the OS cleartext refusal. Only the causes
-            // are logged: supabase-kt's own message contains the request URL.
-            log.debug("supabase network failure: ${e.javaClass.simpleName} <- ${e.cause?.causeChainMessages()}")
+            // supabase-kt HttpRequestException / timeouts / the OS cleartext refusal. HttpRequestException
+            // has no cause: the OS message is inside its own message ("HTTP request to <url> (<method>)
+            // failed with message: …"). URL and method are not secret; AppLogger is debug-only.
+            log.debug("supabase network failure: ${e.causeChainMessages()}")
             SignInOutcome.Failure(AuthError.Network)
         } catch (e: Exception) {
             log.debug("supabase sign-in failure: ${e.javaClass.simpleName}")

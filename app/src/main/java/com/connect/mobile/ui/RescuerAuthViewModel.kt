@@ -33,7 +33,10 @@ sealed interface AuthUiState {
 }
 
 /** The password lives only here, in memory, and is cleared after every attempt. */
-data class LoginForm(val email: String = "", val password: String = "")
+data class LoginForm(val email: String = "", val password: String = "") {
+    /** Never print the password (data-class toString would). */
+    override fun toString(): String = "LoginForm(email=$email, password=<redacted>)"
+}
 
 /** State machine of design section 4.1. */
 class RescuerAuthViewModel(

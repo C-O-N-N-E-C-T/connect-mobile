@@ -15,7 +15,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
@@ -35,7 +34,8 @@ fun MissionScreen(
     modifier: Modifier = Modifier,
 ) {
     var confirm by rememberSaveable { mutableStateOf(false) }
-    val expiry = remember(grant.expiresAt) { ExpiryFormatter.format(grant.expiresAt) }
+    // Not remembered: a time-zone change does not recreate the activity, so format on every composition.
+    val expiry = ExpiryFormatter.format(grant.expiresAt)
 
     Column(
         modifier = modifier

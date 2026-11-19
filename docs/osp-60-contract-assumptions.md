@@ -86,14 +86,14 @@ localised text based on `error_code`:
 
 | HTTP | `error_code` | App reaction |
 |---|---|---|
-| 401 | `UNAUTHENTICATED` | "session could not be verified" |
+| 401 | `UNAUTHENTICATED` (any 401, also without a JSON body) | "session could not be verified" |
 | 403 | `ROLE_FORBIDDEN` | role error (see A3) |
 | 403 | `ACCOUNT_DISABLED` | "account disabled". Assumed for a missing or inactive profile (`user_role` = null) |
 | 403 | `DEVICE_REVOKED` | "device revoked" |
 | 403 | `SESSION_NOT_BOUND` | generic server error |
 | 429 | `RATE_LIMITED` (any 429) | "too many attempts" |
 | 400 | `VALIDATION_ERROR` | "request rejected, update the app" |
-| 404 / 5xx | `NOT_FOUND` / `INTERNAL_ERROR` / unknown / non-JSON body | generic server error |
+| other 4xx / 5xx | `NOT_FOUND` / `INTERNAL_ERROR` / unknown / non-JSON body | generic server error |
 | 2xx | unparsable body | "invalid deployment grant" |
 
 Every error after the Supabase sign-in triggers a full logout (A5).
@@ -219,14 +219,14 @@ gösterilmez. Uygulama `error_code`'a göre yerelleştirilmiş metin gösterir:
 
 | HTTP | `error_code` | Uygulamanın tepkisi |
 |---|---|---|
-| 401 | `UNAUTHENTICATED` | "oturum doğrulanamadı" |
+| 401 | `UNAUTHENTICATED` (her 401, JSON gövdesi olmasa da) | "oturum doğrulanamadı" |
 | 403 | `ROLE_FORBIDDEN` | rol hatası (A3) |
 | 403 | `ACCOUNT_DISABLED` | "hesap devre dışı". Profil yoksa veya pasifse (`user_role` = null) bunun döneceği varsayıldı |
 | 403 | `DEVICE_REVOKED` | "cihaz yetkisi kaldırıldı" |
 | 403 | `SESSION_NOT_BOUND` | genel sunucu hatası |
 | 429 | `RATE_LIMITED` (her 429) | "çok fazla deneme" |
 | 400 | `VALIDATION_ERROR` | "istek reddedildi, uygulamayı güncelleyin" |
-| 404 / 5xx | `NOT_FOUND` / `INTERNAL_ERROR` / bilinmeyen / JSON olmayan gövde | genel sunucu hatası |
+| diğer 4xx / 5xx | `NOT_FOUND` / `INTERNAL_ERROR` / bilinmeyen / JSON olmayan gövde | genel sunucu hatası |
 | 2xx | çözümlenemeyen gövde | "geçersiz görev yetkisi" |
 
 Supabase girişinden sonraki her hata tam çıkışı (A5) tetikler.

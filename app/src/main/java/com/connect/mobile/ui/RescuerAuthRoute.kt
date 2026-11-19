@@ -3,7 +3,9 @@ package com.connect.mobile.ui
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Scaffold
@@ -26,7 +28,8 @@ fun RescuerAuthRoute(viewModel: RescuerAuthViewModel) {
     val form by viewModel.form.collectAsStateWithLifecycle()
 
     Scaffold { padding ->
-        val modifier = Modifier.padding(padding)
+        // imePadding: the keyboard must not cover the password field or the Sign in button.
+        val modifier = Modifier.padding(padding).consumeWindowInsets(padding).imePadding()
         when (val s = state) {
             AuthUiState.Bootstrapping -> Busy(R.string.loading, modifier)
             AuthUiState.LoggingOut -> Busy(R.string.mission_logging_out, modifier)

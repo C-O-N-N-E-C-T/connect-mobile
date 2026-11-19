@@ -15,6 +15,9 @@ class NetworkSecurityConfigTest {
         assertFalse(config.contains("<domain-config"))
         assertFalse(config.contains("<debug-overrides"))
         assertFalse(config.contains("cleartextTrafficPermitted=\"true\""))
+        // No custom trust anchors (e.g. user-installed CAs): the platform default applies.
+        assertFalse(config.contains("trust-anchors"))
+        assertFalse(config.contains("src=\"user\""))
     }
 
     @Test fun manifestUsesTheConfig() {

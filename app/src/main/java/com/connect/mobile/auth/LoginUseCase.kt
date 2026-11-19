@@ -174,6 +174,7 @@ internal fun BackendError.toAuthError(): AuthError = when (this) {
         code == "DEVICE_REVOKED" -> AuthError.DeviceRevoked
         code == "RATE_LIMITED" || status == 429 -> AuthError.RateLimited
         code == "VALIDATION_ERROR" -> AuthError.RequestRejected
+        status == 401 -> AuthError.SessionRejected // e.g. a proxy 401 without a JSON body
         else -> AuthError.Server // SESSION_NOT_BOUND, NOT_FOUND, INTERNAL_ERROR, unknown
     }
 }
