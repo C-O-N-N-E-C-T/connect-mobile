@@ -3,6 +3,7 @@ package com.connect.mobile.data.session
 import io.github.jan.supabase.auth.SessionManager
 import io.github.jan.supabase.auth.exception.NoSessionFoundException
 import io.github.jan.supabase.auth.user.UserSession
+import kotlinx.coroutines.CancellationException
 import kotlinx.serialization.json.Json
 
 /**
@@ -27,7 +28,15 @@ class StoreBackedSessionManager(private val store: SessionStore) : SessionManage
 
     override suspend fun saveSession(session: UserSession) {
         if (savesBlocked) return
-        store.writeSupabaseSession(json.encodeToString(UserSession.serializer(), session))
+        // Review R4: supabase-kt also saves from its own refresh job, where no app code can catch a
+        // store error (disk full). Drop a failed save: the session stays in memory only.
+        try {
+            store.writeSupabaseSession(json.encodeToString(UserSession.serializer(), session))
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // dropped
+        }
     }
 
     override suspend fun loadSession(): UserSession {
@@ -37,7 +46,15 @@ class StoreBackedSessionManager(private val store: SessionStore) : SessionManage
 
     /** Deletes ONLY the session; the grant and device_id are untouched. */
     override suspend fun deleteSession() {
-        store.deleteSupabaseSession()
+        // Same reason as saveSession (supabase-kt clears a revoked session from its refresh job).
+        // LogoutUseCase does not rely on this: its clearAuth() reports a store failure.
+        try {
+            store.deleteSupabaseSession()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // ignored
+        }
     }
 
     private companion object {

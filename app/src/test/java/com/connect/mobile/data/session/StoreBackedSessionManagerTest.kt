@@ -9,6 +9,7 @@ import org.junit.Assert.assertNull
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
+import java.io.IOException
 import java.time.Instant
 
 class StoreBackedSessionManagerTest {
@@ -53,6 +54,17 @@ class StoreBackedSessionManagerTest {
         m.saveSession(session)
         assertNotNull(h.store.readSupabaseSession())
         h.close()
+    }
+
+    /** R4: supabase-kt saves/clears from its own refresh job, where a store error would be uncaught. */
+    @Test fun storeErrorsDoNotEscape() = runTest {
+        val failing = object : SessionStore by com.connect.mobile.auth.InMemorySessionStore() {
+            override suspend fun writeSupabaseSession(json: String) = throw IOException("disk full")
+            override suspend fun deleteSupabaseSession() = throw IOException("disk full")
+        }
+        val m = StoreBackedSessionManager(failing)
+        m.saveSession(session)
+        m.deleteSession()
     }
 
     @Test fun deleteSessionKeepsGrantAndDeviceId() = runTest {

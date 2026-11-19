@@ -156,6 +156,10 @@ data class StoredGrant(val userId: String, val deviceId: String, val role: Strin
   - bootstrap error → `LoginIdle(error = Server)`;
   - any exception after sign-in (e.g. `writeGrant` on a full disk) → full teardown + `Server`;
   - a failed `clearAuth()` on logout → `LoginIdle(error = Server)` instead of "logged out".
+  - `StoreBackedSessionManager.saveSession` / `deleteSession` swallow store errors: supabase-kt
+    also calls them from its own refresh job, where nothing could catch them. A failed save keeps
+    the session in memory only. (An undecodable stored session is already treated as "no session"
+    by supabase-kt; checked with the real client.)
 
 ### 3.2 supabase-kt session persistence: finding and integration
 - **Finding (auth-kt 3.9.0 sources):** if `AuthConfig.sessionManager` is null, the client uses
