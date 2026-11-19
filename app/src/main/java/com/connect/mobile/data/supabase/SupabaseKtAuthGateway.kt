@@ -11,7 +11,12 @@ import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.exceptions.RestException
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.jsonObject
 import java.io.IOException
+import java.util.Base64
 
 class SupabaseKtAuthGateway(
     private val auth: Auth,
@@ -58,6 +63,13 @@ class SupabaseKtAuthGateway(
         return auth.currentAccessTokenOrNull()
     }
 
+    override suspend fun currentUserIdOrNull(): String? {
+        awaitInitialized()
+        val session = auth.currentSessionOrNull() ?: return null
+        // The password-grant response carries the user; the JWT `sub` is the same id (fallback).
+        return session.user?.id ?: jwtSubject(session.accessToken)
+    }
+
     override suspend fun signOut() {
         auth.signOut(SignOutScope.LOCAL)
     }
@@ -72,11 +84,19 @@ class SupabaseKtAuthGateway(
     }
 }
 
+/** `sub` claim of a JWT, decoded WITHOUT verification (only compared with the backend's answer). */
+internal fun jwtSubject(jwt: String): String? = runCatching {
+    val payload = jwt.split('.')[1]
+    val text = String(Base64.getUrlDecoder().decode(payload.trimEnd('=')), Charsets.UTF_8)
+    (Json.parseToJsonElement(text).jsonObject["sub"] as? JsonPrimitive)?.contentOrNull
+}.getOrNull()
+
 /** Used when SUPABASE_URL / SUPABASE_ANON_KEY are missing: no client is created at all. */
 class NotConfiguredAuthGateway(private val deleteStoredSession: suspend () -> Unit) : SupabaseAuthGateway {
     override suspend fun awaitInitialized() = Unit
     override suspend fun signIn(email: String, password: String) = SignInOutcome.Failure(AuthError.NotConfigured)
     override suspend fun accessTokenOrNull(): String? = null
+    override suspend fun currentUserIdOrNull(): String? = null
     override suspend fun signOut() = Unit
     override suspend fun clearLocalSession() = deleteStoredSession()
 }

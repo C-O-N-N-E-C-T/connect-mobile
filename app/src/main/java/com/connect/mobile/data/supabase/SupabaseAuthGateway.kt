@@ -11,6 +11,9 @@ interface SupabaseAuthGateway {
 
     suspend fun accessTokenOrNull(): String?
 
+    /** The Supabase user id (JWT `sub`) of the current session, or null. */
+    suspend fun currentUserIdOrNull(): String?
+
     /** Remote Supabase /logout (scope LOCAL). May throw; never relied on for the local wipe. */
     suspend fun signOut()
 

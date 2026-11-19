@@ -32,6 +32,7 @@ class SchedulerClock(private val scheduler: TestCoroutineScheduler, private val 
 class FakeGateway(private val events: Events) : SupabaseAuthGateway {
     var outcome: SignInOutcome = SignInOutcome.Success
     var token: String? = "test-token"
+    var userId: String? = "u1"
     var signOutError: Exception? = null
     var initDelayMs = 0L
     var initialized = false
@@ -56,6 +57,11 @@ class FakeGateway(private val events: Events) : SupabaseAuthGateway {
     override suspend fun accessTokenOrNull(): String? {
         awaitInitialized()
         return token
+    }
+
+    override suspend fun currentUserIdOrNull(): String? {
+        awaitInitialized()
+        return userId
     }
 
     override suspend fun signOut() {
@@ -98,10 +104,12 @@ class FakeBackend(private val events: Events) : AuthBackend {
             grantUserId: String = "u1",
             grantDeviceId: String = DEVICE_ID,
             withGrant: Boolean = true,
+            userId: String = "u1",
+            deviceId: String = DEVICE_ID,
         ) = SessionResponse(
-            userId = "u1",
+            userId = userId,
             role = role,
-            deviceId = DEVICE_ID,
+            deviceId = deviceId,
             grant = if (withGrant) OfflineMissionGrantDto(grantUserId, grantDeviceId, authenticatedAt, expiresAt) else null,
         )
     }

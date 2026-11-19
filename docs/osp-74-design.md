@@ -241,6 +241,9 @@ const val GRANT_JSON_KEY = "offline_mission_grant"
 - Timestamps are parsed with `OffsetDateTime.parse(...).toInstant()` (java.time is available on API 26+).
 - **Client-side grant sanity check.** All of the following must hold, or the result is
   `GrantInvalid` and the teardown runs:
+  - `user_id ==` the id of the signed-in Supabase user (`gateway.currentUserIdOrNull()`: the
+    session's `user.id`, falling back to the JWT `sub`) and `device_id ==` our `device_id` (review
+    R5; checked before the role, so it also applies to non-rescuer answers)
   - `grant.user_id == user_id`
   - `grant.device_id ==` our `device_id`
   - `0 < expires_at - authenticated_at ≤ 72 h + 60 s`

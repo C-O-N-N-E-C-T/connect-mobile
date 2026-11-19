@@ -114,6 +114,36 @@ class LoginUseCaseTest {
         }
     }
 
+    /** R5: a self-consistent answer about another user or device is rejected with a full teardown. */
+    @Test fun responseForAnotherUserOrDeviceIsRejected() = runTest {
+        val cases = listOf(
+            FakeBackend.rescuerResponse(userId = "u2", grantUserId = "u2"), // signed in as u1
+            FakeBackend.rescuerResponse(deviceId = "other-device"),
+        )
+        for (response in cases) {
+            events.clear()
+            backend.bind = { BackendResult.Ok(response) }
+            assertEquals(response.toString(), LoginResult.Failure(AuthError.GrantInvalid), useCase()("x@y.io", "pw"))
+            assertEquals(listOf("signIn", "bindSession") + fullTeardown, events)
+            assertNull(store.readGrant())
+        }
+    }
+
+    @Test fun unknownSignedInUserIsRejected() = runTest {
+        gateway.userId = null
+        assertEquals(LoginResult.Failure(AuthError.GrantInvalid), useCase()("x@y.io", "pw"))
+        assertEquals(listOf("signIn", "bindSession") + fullTeardown, events)
+    }
+
+    /** R12: a non-rescuer role is rejected even when the response carries a valid grant. */
+    @Test fun coordinatorWithGrantIsStillRejected() = runTest {
+        backend.bind = { BackendResult.Ok(FakeBackend.rescuerResponse(role = "coordinator")) }
+        assertEquals(LoginResult.Failure(AuthError.RoleNotAllowed), useCase()("x@y.io", "pw"))
+        assertEquals(listOf("signIn", "bindSession") + fullTeardown, events)
+        assertNull(store.readGrant())
+        assertNull(store.session)
+    }
+
     @Test fun grantUpTo72hPlus60sIsAccepted() = runTest {
         backend.bind = { BackendResult.Ok(FakeBackend.rescuerResponse(expiresAt = "2026-11-22T10:01:00Z")) }
         assertTrue(useCase()("x@y.io", "pw") is LoginResult.Success)

@@ -61,6 +61,8 @@ For a **coordinator or administrator** (if you answer 200), the grant is absent 
   non-rescuers.
 - **Client sanity check:** the app rejects the grant ("invalid deployment grant", then a full
   logout) unless all of these hold:
+  - `user_id ==` the Supabase user id (JWT `sub`) of the access token the app sent, and
+    `device_id ==` the `device_id` the app sent (checked for every 200, also for non-rescuers)
   - `grant.user_id == user_id`
   - `grant.device_id ==` the `device_id` the app sent
   - `0 < expires_at − authenticated_at ≤ 72 h` (plus 60 s tolerance)
@@ -119,8 +121,8 @@ Authorization: Bearer <supabase access_token>
 | A1 | `main/.../data/backend/AuthDtos.kt` | `SessionRequest` |
 | A1 | `main/.../data/backend/KtorAuthBackend.kt` | `bindSession`, `SESSION_PATH` |
 | A2 | `main/.../data/backend/AuthDtos.kt` | `SessionResponse`, `OfflineMissionGrantDto`, `GRANT_JSON_KEY` |
-| A2 | `main/.../auth/LoginUseCase.kt` | `RESCUER_ROLE`, `validateGrant` (timestamps, sanity check) |
-| A3 | `main/.../auth/LoginUseCase.kt` | role check in `invoke`, `toAuthError` |
+| A2 | `main/.../auth/LoginUseCase.kt` | `RESCUER_ROLE`, `validateGrant` (timestamps, sanity check), identity check in `signInAndBind` |
+| A3 | `main/.../auth/LoginUseCase.kt` | role check in `signInAndBind`, `toAuthError` |
 | A4 | `main/.../auth/LoginUseCase.kt` | `BackendError.toAuthError()` |
 | A4 | `main/.../data/backend/KtorAuthBackend.kt` | `execute` (`ErrorBody` parsing) |
 | A5 | `main/.../data/backend/KtorAuthBackend.kt` | `logout`, `LOGOUT_PATH` |
@@ -191,6 +193,9 @@ Content-Type: application/json
   yalnızca kurtarıcı olmayanlarda grant zorunlu değildir.
 - **İstemci tarafı kontrol:** aşağıdakilerin hepsi sağlanmazsa uygulama grant'i reddeder ("geçersiz
   görev yetkisi") ve ardından tam çıkış yapar:
+  - `user_id ==` uygulamanın gönderdiği access token'ın Supabase kullanıcı kimliği (JWT `sub`) ve
+    `device_id ==` uygulamanın gönderdiği `device_id` (her 200 yanıtında, kurtarıcı olmayanlarda da
+    kontrol edilir)
   - `grant.user_id == user_id`
   - `grant.device_id ==` uygulamanın gönderdiği `device_id`
   - `0 < expires_at − authenticated_at ≤ 72 saat` (60 sn tolerans)
@@ -249,8 +254,8 @@ Authorization: Bearer <supabase access_token>
 | A1 | `main/.../data/backend/AuthDtos.kt` | `SessionRequest` |
 | A1 | `main/.../data/backend/KtorAuthBackend.kt` | `bindSession`, `SESSION_PATH` |
 | A2 | `main/.../data/backend/AuthDtos.kt` | `SessionResponse`, `OfflineMissionGrantDto`, `GRANT_JSON_KEY` |
-| A2 | `main/.../auth/LoginUseCase.kt` | `RESCUER_ROLE`, `validateGrant` (zaman damgaları, kontrol) |
-| A3 | `main/.../auth/LoginUseCase.kt` | `invoke` içindeki rol kontrolü, `toAuthError` |
+| A2 | `main/.../auth/LoginUseCase.kt` | `RESCUER_ROLE`, `validateGrant` (zaman damgaları, kontrol), `signInAndBind` içindeki kimlik kontrolü |
+| A3 | `main/.../auth/LoginUseCase.kt` | `signInAndBind` içindeki rol kontrolü, `toAuthError` |
 | A4 | `main/.../auth/LoginUseCase.kt` | `BackendError.toAuthError()` |
 | A4 | `main/.../data/backend/KtorAuthBackend.kt` | `execute` (`ErrorBody` çözümleme) |
 | A5 | `main/.../data/backend/KtorAuthBackend.kt` | `logout`, `LOGOUT_PATH` |

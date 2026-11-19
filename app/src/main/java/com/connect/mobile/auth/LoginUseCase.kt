@@ -92,6 +92,13 @@ class LoginUseCase(
             is BackendResult.Ok -> r.value
         }
 
+        // Review R5: the answer must be about the user we actually signed in as, and about this device.
+        // OSP-60 ASSUMPTION: response user_id == the Supabase user id (JWT sub) of the token sent, response device_id == the device_id we sent — see docs/osp-60-contract-assumptions.md
+        val signedInUserId = gateway.currentUserIdOrNull()
+        if (signedInUserId == null || response.userId != signedInUserId || response.deviceId != deviceId) {
+            return fail(AuthError.GrantInvalid, remote = true, onStep)
+        }
+
         // OSP-60 ASSUMPTION: a coordinator/administrator may get 200 with role != "rescuer" (handled here) or 403 ROLE_FORBIDDEN (handled in toAuthError) — see docs/osp-60-contract-assumptions.md
         if (response.role != RESCUER_ROLE) {
             return fail(AuthError.RoleNotAllowed, remote = true, onStep)
