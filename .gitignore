@@ -1,0 +1,15 @@
+# Local machine config and secrets (repo is PUBLIC) - never commit
+local.properties
+*.keystore
+*.jks
+
+# Gradle / Kotlin / build output
+.gradle/
+.kotlin/
+build/
+captures/
+
+# IDE
+.idea/
+*.iml
+.DS_Store
