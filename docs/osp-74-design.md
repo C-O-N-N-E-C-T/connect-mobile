@@ -138,6 +138,12 @@ data class StoredGrant(val userId: String, val deviceId: String, val role: Strin
 - `clearAuth()` does `edit { it.remove(k) }` for an explicit key list. It never calls `clear()` and
   never deletes the file. `device_id` is never in that list.
 - The store has no reference to any victim, relay or DB file.
+- **Store errors (review R4).** `create()` passes `ReplaceFileCorruptionHandler { emptyPreferences() }`,
+  so a corrupt file fails closed (no grant, no tokens, new `device_id`) instead of crashing every
+  launch. Other I/O errors are caught by the callers:
+  - bootstrap error → `LoginIdle(error = Server)`;
+  - any exception after sign-in (e.g. `writeGrant` on a full disk) → full teardown + `Server`;
+  - a failed `clearAuth()` on logout → `LoginIdle(error = Server)` instead of "logged out".
 
 ### 3.2 supabase-kt session persistence: finding and integration
 - **Finding (auth-kt 3.9.0 sources):** if `AuthConfig.sessionManager` is null, the client uses
@@ -183,6 +189,12 @@ data class StoredGrant(val userId: String, val deviceId: String, val role: Strin
   constructor parameter so it can be replaced in tests.
 - The ID survives logout. It does not survive an uninstall, and backup is disabled (section 2), so a
   restored install gets a new ID and the old one cannot be cloned.
+- **When it is created (review R3):** `SessionBootstrap` calls `deviceId()` at every start-up, so the
+  ID exists from the first launch. This call is best effort: on a full disk the write fails while
+  reads still work, and a stored grant must still reach the mission screen. `LoginUseCase` still
+  uses get-or-create.
+- A corrupt session file is replaced with an empty one (section 3.1). The ID lives in that file and
+  cannot be recovered from it, so it is regenerated (the backend then sees a new device).
 
 ### 3.4 AuthBackend (OSP-60 contract)
 ```kotlin
@@ -285,6 +297,10 @@ LoginIdle ──submit──► SigningIn ──Supabase error──► teardown
 MissionActive ──"End Mission / Log Out" → confirm dialog──► LoggingOut ──► LoginIdle(info = LoggedOut)
 ```
 - Submit is disabled outside `LoginIdle`, so double taps are ignored.
+- **Cancellation (review R6):** if the login coroutine is cancelled after the sign-in (for example the
+  activity finishes during "Verifying deployment authorization…"), `LoginUseCase` runs the local
+  teardown in `NonCancellable` and rethrows. A `CancellationException` while the coroutine is still
+  active (a stray nested timeout) is treated as a `Server` failure with the full teardown.
 - The password lives only in ViewModel memory and is cleared after each attempt.
 - The JWT `user_role` claim is **not** used for decisions. Only `SessionResponse.role` is.
 - Grant expiry and gating of `MissionActive` are not enforced here:

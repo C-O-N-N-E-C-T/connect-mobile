@@ -10,6 +10,11 @@ import com.connect.mobile.data.session.SessionStore
 import com.connect.mobile.data.session.StoredGrant
 import com.connect.mobile.data.supabase.SignInOutcome
 import com.connect.mobile.data.supabase.SupabaseAuthGateway
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
 import java.time.Duration
 import java.time.OffsetDateTime
 
@@ -22,7 +27,8 @@ sealed interface LoginResult {
 
 /**
  * Supabase e-mail/password sign-in -> POST /api/v1/auth/session -> role gate (rescuer only) ->
- * grant sanity check -> persist grant. Any failure after sign-in runs the full teardown.
+ * grant sanity check -> persist grant. Any failure after sign-in runs the full teardown; a cancelled
+ * login wipes locally.
  *
  * Only SessionResponse.role decides; the JWT user_role claim is never used for decisions.
  */
@@ -46,7 +52,30 @@ class LoginUseCase(
         }
 
         onStep(LoginStep.SigningIn)
-        when (val outcome = gateway.signIn(trimmedEmail, password)) {
+        return try {
+            signInAndBind(trimmedEmail, password, onStep)
+        } catch (e: CancellationException) {
+            if (currentCoroutineContext().isActive) {
+                // A stray CancellationException (e.g. a nested timeout) while we are still running.
+                fail(AuthError.Server, remote = true, onStep)
+            } else {
+                // The caller left (e.g. the screen closed) after sign-in: tokens may already be
+                // persisted, so wipe them locally before rethrowing (review R6).
+                withContext(NonCancellable) { logout(remote = false) }
+                throw e
+            }
+        } catch (e: Exception) {
+            // Store error (e.g. disk full in writeGrant) or anything unexpected: never leave tokens behind.
+            fail(AuthError.Server, remote = true, onStep)
+        }
+    }
+
+    private suspend fun signInAndBind(
+        email: String,
+        password: String,
+        onStep: (LoginStep) -> Unit,
+    ): LoginResult {
+        when (val outcome = gateway.signIn(email, password)) {
             is SignInOutcome.Failure -> return fail(outcome.error, remote = false, onStep)
             SignInOutcome.Success -> Unit
         }

@@ -29,7 +29,8 @@ Content-Type: application/json
 {"device_id":"3f1c2b9e-7a4d-4e8b-9c1a-2d5e6f708192","device_name":"Samsung SM-A546B"}
 ```
 - `device_id` is a random v4 UUID created on the first launch of the app. It does not change on
-  logout. It changes only on reinstall. It is never the IMEI or ANDROID_ID.
+  logout. It changes only on reinstall, or if the app's local session file is corrupt (it is then
+  regenerated). It is never the IMEI or ANDROID_ID.
 - `device_name` is `"<manufacturer> <model>"`, at most 100 characters.
 
 ### A2. `POST /api/v1/auth/session`: 200 response
@@ -155,7 +156,8 @@ Content-Type: application/json
 {"device_id":"3f1c2b9e-7a4d-4e8b-9c1a-2d5e6f708192","device_name":"Samsung SM-A546B"}
 ```
 - `device_id`, uygulama ilk açıldığında üretilen rastgele bir v4 UUID'dir. Çıkışta değişmez;
-  yalnızca uygulama yeniden yüklenince değişir. Hiçbir zaman IMEI veya ANDROID_ID değildir.
+  yalnızca uygulama yeniden yüklenince ya da uygulamanın yerel oturum dosyası bozulursa (o zaman
+  yeniden üretilir) değişir. Hiçbir zaman IMEI veya ANDROID_ID değildir.
 - `device_name`, `"<üretici> <model>"` biçimindedir; en fazla 100 karakterdir.
 
 ### A2. `POST /api/v1/auth/session`: 200 yanıtı

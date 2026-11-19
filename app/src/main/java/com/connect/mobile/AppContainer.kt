@@ -59,7 +59,7 @@ class AppContainer(context: Context) {
             logout = logoutUseCase,
         ),
         logout = logoutUseCase,
-        bootstrap = SessionBootstrap(sessionStore, logoutUseCase),
+        bootstrap = SessionBootstrap(sessionStore, deviceIdProvider, logoutUseCase),
     )
 
     private fun createGateway(): SupabaseAuthGateway {

@@ -1,9 +1,11 @@
 package com.connect.mobile.data.session
 
 import androidx.datastore.core.DataStore
+import androidx.datastore.core.handlers.ReplaceFileCorruptionHandler
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import androidx.datastore.preferences.core.edit
+import androidx.datastore.preferences.core.emptyPreferences
 import androidx.datastore.preferences.core.longPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import kotlinx.coroutines.CoroutineScope
@@ -95,11 +97,23 @@ class DataStoreSessionStore(private val dataStore: DataStore<Preferences>) : Ses
         )
         private val AUTH_KEYS: List<Preferences.Key<*>> = listOf(SUPABASE_SESSION) + GRANT_KEYS
 
-        /** [produceFile] lets tests use a temp file; the app passes `filesDir/datastore/FILE_NAME`. */
+        /**
+         * [produceFile] lets tests use a temp file; the app passes `filesDir/datastore/FILE_NAME`.
+         *
+         * A corrupt file is replaced with empty preferences instead of crashing on every launch
+         * (review R4). Fails closed: the grant and tokens are gone (login required) and the
+         * device_id, which lives in the same file and cannot be recovered from it, is regenerated
+         * on the next get-or-create.
+         */
         fun create(
             produceFile: () -> File,
             scope: CoroutineScope = CoroutineScope(Dispatchers.IO + SupervisorJob()),
-        ): DataStoreSessionStore =
-            DataStoreSessionStore(PreferenceDataStoreFactory.create(scope = scope, produceFile = produceFile))
+        ): DataStoreSessionStore = DataStoreSessionStore(
+            PreferenceDataStoreFactory.create(
+                corruptionHandler = ReplaceFileCorruptionHandler { emptyPreferences() },
+                scope = scope,
+                produceFile = produceFile,
+            ),
+        )
     }
 }

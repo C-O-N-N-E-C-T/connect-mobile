@@ -10,6 +10,7 @@ import com.connect.mobile.auth.LoginUseCase
 import com.connect.mobile.auth.LogoutUseCase
 import com.connect.mobile.auth.SessionBootstrap
 import com.connect.mobile.data.session.StoredGrant
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -43,9 +44,16 @@ class RescuerAuthViewModel(
 
     init {
         viewModelScope.launch {
-            _state.value = when (val r = bootstrap()) {
-                is BootstrapResult.MissionActive -> AuthUiState.MissionActive(r.grant)
-                BootstrapResult.LoginRequired -> AuthUiState.LoginIdle()
+            _state.value = try {
+                when (val r = bootstrap()) {
+                    is BootstrapResult.MissionActive -> AuthUiState.MissionActive(r.grant)
+                    BootstrapResult.LoginRequired -> AuthUiState.LoginIdle()
+                }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Store unreadable (I/O error): fail closed to the login screen instead of crashing.
+                AuthUiState.LoginIdle(error = AuthError.Server)
             }
         }
     }
@@ -61,12 +69,18 @@ class RescuerAuthViewModel(
         _form.update { it.copy(password = "") }
         _state.value = AuthUiState.SigningIn
         viewModelScope.launch {
-            val result = login(attempt.email, attempt.password) { step ->
-                _state.value = when (step) {
-                    LoginStep.SigningIn -> AuthUiState.SigningIn
-                    LoginStep.BindingSession -> AuthUiState.BindingSession
-                    LoginStep.TearingDown -> AuthUiState.TearingDown
+            val result = try {
+                login(attempt.email, attempt.password) { step ->
+                    _state.value = when (step) {
+                        LoginStep.SigningIn -> AuthUiState.SigningIn
+                        LoginStep.BindingSession -> AuthUiState.BindingSession
+                        LoginStep.TearingDown -> AuthUiState.TearingDown
+                    }
                 }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                LoginResult.Failure(AuthError.Server)
             }
             _state.value = when (result) {
                 is LoginResult.Success -> AuthUiState.MissionActive(result.grant)
@@ -80,8 +94,15 @@ class RescuerAuthViewModel(
         if (_state.value !is AuthUiState.MissionActive) return
         _state.value = AuthUiState.LoggingOut
         viewModelScope.launch {
-            logout(remote = true)
-            _state.value = AuthUiState.LoginIdle(loggedOut = true)
+            val wiped = try {
+                logout(remote = true)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                false
+            }
+            // If the store could not be cleared, do not claim "logged out".
+            _state.value = if (wiped) AuthUiState.LoginIdle(loggedOut = true) else AuthUiState.LoginIdle(error = AuthError.Server)
         }
     }
 }

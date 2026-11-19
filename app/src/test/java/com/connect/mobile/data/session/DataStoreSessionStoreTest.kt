@@ -2,11 +2,17 @@ package com.connect.mobile.data.session
 
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import androidx.datastore.core.CorruptionException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -62,6 +68,31 @@ class DataStoreSessionStoreTest {
         assertEquals("{}", h.store.readSupabaseSession())
         assertEquals(id, h.store.getOrCreateDeviceId { "other" })
         h.close()
+    }
+
+    /** R4: a corrupt file must not crash every launch; it fails closed and the device_id is regenerated. */
+    @Test fun corruptFileIsReplacedInsteadOfCrashing() = runTest {
+        val file = tmp.newFile("s.preferences_pb")
+        val garbage = ByteArray(32) { -1 }
+        file.writeBytes(garbage)
+
+        // Control: without the handler, the same bytes really are a CorruptionException.
+        val plain = TestStoreHandle(file)
+        try {
+            plain.store.readGrant()
+            fail("expected CorruptionException")
+        } catch (e: CorruptionException) {
+            // expected
+        }
+        plain.close()
+
+        file.writeBytes(garbage)
+        val job = Job()
+        val store = DataStoreSessionStore.create(produceFile = { file }, scope = CoroutineScope(Dispatchers.IO + job))
+        assertNull(store.readGrant())
+        assertNull(store.readSupabaseSession())
+        assertEquals("regenerated", store.getOrCreateDeviceId { "regenerated" })
+        job.cancelAndJoin()
     }
 
     @Test fun deleteSupabaseSessionKeepsGrant() = runTest {

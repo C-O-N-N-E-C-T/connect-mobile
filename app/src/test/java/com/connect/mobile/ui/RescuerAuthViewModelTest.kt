@@ -42,7 +42,7 @@ class RescuerAuthViewModelTest {
     private fun TestScope.newViewModel(): RescuerAuthViewModel {
         val logout = LogoutUseCase(gateway, backend, store)
         val login = LoginUseCase(true, gateway, backend, store, DeviceIdProvider(store) { "Phone" }, logout)
-        return RescuerAuthViewModel(login, logout, SessionBootstrap(store, logout)).also { advanceUntilIdle() }
+        return RescuerAuthViewModel(login, logout, SessionBootstrap(store, DeviceIdProvider(store) { "Phone" }, logout)).also { advanceUntilIdle() }
     }
 
     @Test fun loginLogoutHappyPath() = runTest(dispatcher) {
@@ -99,6 +99,26 @@ class RescuerAuthViewModelTest {
         store.writeGrant(grant)
         val vm = newViewModel()
         assertEquals(AuthUiState.MissionActive(grant), vm.state.value)
+    }
+
+    /** R4: an unreadable store at start-up fails closed to the login screen instead of crashing. */
+    @Test fun bootstrapStoreErrorShowsLoginWithError() = runTest(dispatcher) {
+        store.readError = java.io.IOException("unreadable")
+        val vm = newViewModel()
+        assertEquals(AuthUiState.LoginIdle(error = AuthError.Server), vm.state.value)
+    }
+
+    /** R4: if the store cannot be cleared, the UI must not claim "logged out". */
+    @Test fun failedWipeIsNotReportedAsLoggedOut() = runTest(dispatcher) {
+        val grant = com.connect.mobile.data.session.StoredGrant(
+            "u1", FakeBackend.DEVICE_ID, "rescuer", java.time.Instant.EPOCH, java.time.Instant.EPOCH.plusSeconds(60),
+        )
+        store.writeGrant(grant)
+        store.clearAuthError = java.io.IOException("disk error")
+        val vm = newViewModel()
+        vm.endMission()
+        advanceUntilIdle()
+        assertEquals(AuthUiState.LoginIdle(error = AuthError.Server), vm.state.value)
     }
 
     @Test fun endMissionIgnoredOutsideMission() = runTest(dispatcher) {

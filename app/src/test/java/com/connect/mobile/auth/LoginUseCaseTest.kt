@@ -4,12 +4,17 @@ import com.connect.mobile.data.backend.BackendError
 import com.connect.mobile.data.backend.BackendResult
 import com.connect.mobile.data.device.DeviceIdProvider
 import com.connect.mobile.data.supabase.SignInOutcome
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 
 class LoginUseCaseTest {
     private val events = Events()
@@ -120,6 +125,36 @@ class LoginUseCaseTest {
     @Test fun notConfigured() = runTest {
         assertEquals(LoginResult.Failure(AuthError.NotConfigured), useCase(configured = false)("x@y.io", "pw"))
         assertTrue(events.isEmpty())
+    }
+
+    /** R4: a store failure after the bind must not crash and must not leave tokens behind. */
+    @Test fun writeGrantFailureTearsDown() = runTest {
+        store.session = "{}" // tokens saved by supabase-kt during sign-in
+        store.writeError = IOException("disk full")
+        assertEquals(LoginResult.Failure(AuthError.Server), useCase()("x@y.io", "pw"))
+        assertEquals(listOf("signIn", "bindSession") + fullTeardown, events)
+        assertNull(store.session)
+    }
+
+    /** R6: the caller leaves (ViewModel cleared) during the bind: tokens are wiped locally. */
+    @Test fun cancellationAfterSignInWipesLocally() = runTest {
+        store.session = "{}"
+        backend.bind = { awaitCancellation() }
+        val job = launch { useCase()("x@y.io", "pw") }
+        runCurrent()
+        assertTrue(events.contains("bindSession"))
+        job.cancel()
+        job.join()
+        assertEquals(listOf("signIn", "bindSession", "clearGrant", "clearLocalSession", "clearAuth"), events)
+        assertNull(store.session)
+        assertNull(store.readGrant())
+    }
+
+    /** A stray CancellationException while the caller is still active is a failure, not a hang. */
+    @Test fun strayCancellationExceptionIsAFailure() = runTest {
+        backend.bind = { throw CancellationException("nested timeout") }
+        assertEquals(LoginResult.Failure(AuthError.Server), useCase()("x@y.io", "pw"))
+        assertEquals(listOf("signIn", "bindSession") + fullTeardown, events)
     }
 
     @Test fun reportsSteps() = runTest {

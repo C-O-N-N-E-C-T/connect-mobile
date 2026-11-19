@@ -97,18 +97,37 @@ class InMemorySessionStore(private val events: Events = Events()) : SessionStore
     var session: String? = null
     private val grantState = MutableStateFlow<StoredGrant?>(null)
 
-    override suspend fun getOrCreateDeviceId(generate: () -> String): String = deviceId ?: generate().also { deviceId = it }
-    override suspend fun readSupabaseSession() = session
+    /** Simulated I/O failures (disk full, unreadable file). */
+    var readError: Exception? = null
+    var writeError: Exception? = null
+    var clearAuthError: Exception? = null
+
+    override suspend fun getOrCreateDeviceId(generate: () -> String): String {
+        deviceId?.let { return it }
+        writeError?.let { throw it }
+        return generate().also { deviceId = it }
+    }
+    override suspend fun readSupabaseSession(): String? {
+        readError?.let { throw it }
+        return session
+    }
     override suspend fun writeSupabaseSession(json: String) { session = json }
     override suspend fun deleteSupabaseSession() { session = null }
-    override suspend fun readGrant() = grantState.value
-    override suspend fun writeGrant(grant: StoredGrant) { grantState.value = grant }
+    override suspend fun readGrant(): StoredGrant? {
+        readError?.let { throw it }
+        return grantState.value
+    }
+    override suspend fun writeGrant(grant: StoredGrant) {
+        writeError?.let { throw it }
+        grantState.value = grant
+    }
     override suspend fun clearGrant() {
         events += "clearGrant"
         grantState.value = null
     }
     override suspend fun clearAuth() {
         events += "clearAuth"
+        clearAuthError?.let { throw it }
         session = null
         grantState.value = null
     }
