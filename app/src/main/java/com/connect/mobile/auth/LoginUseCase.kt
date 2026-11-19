@@ -15,7 +15,9 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.withContext
+import java.time.Clock
 import java.time.Duration
+import java.time.Instant
 import java.time.OffsetDateTime
 
 enum class LoginStep { SigningIn, BindingSession, TearingDown }
@@ -39,6 +41,7 @@ class LoginUseCase(
     private val store: SessionStore,
     private val deviceIdProvider: DeviceIdProvider,
     private val logout: LogoutUseCase,
+    private val clock: Clock = Clock.systemUTC(),
 ) {
     suspend operator fun invoke(
         email: String,
@@ -93,7 +96,7 @@ class LoginUseCase(
         if (response.role != RESCUER_ROLE) {
             return fail(AuthError.RoleNotAllowed, remote = true, onStep)
         }
-        val grant = validateGrant(response, deviceId)
+        val grant = validateGrant(response, deviceId, clock.instant())
             ?: return fail(AuthError.GrantInvalid, remote = true, onStep)
 
         store.writeGrant(grant)
@@ -116,18 +119,24 @@ class LoginUseCase(
         val MAX_GRANT: Duration = Duration.ofHours(72).plusSeconds(60)
         private val EMAIL = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
 
-        /** Client-side sanity check only; expiry over time is OSP-73's OfflineGrantPolicy. */
-        fun validateGrant(response: SessionResponse, ourDeviceId: String): StoredGrant? {
+        /** Tolerated difference between the server clock and the device wall clock (review R2). */
+        val MAX_CLOCK_SKEW: Duration = Duration.ofMinutes(5)
+
+        /**
+         * Client-side sanity check, including a wall-clock check against [now] (review R2). The
+         * monotonic-clock expiry policy is OSP-73's OfflineGrantPolicy.
+         */
+        fun validateGrant(response: SessionResponse, ourDeviceId: String, now: Instant): StoredGrant? {
             val dto: OfflineMissionGrantDto = response.grant ?: return null
-            // OSP-60 ASSUMPTION: grant.user_id == response user_id, grant.device_id == the device_id we sent, 0 < expires_at - authenticated_at <= 72 h (+60 s tolerance) — see docs/osp-60-contract-assumptions.md
+            // OSP-60 ASSUMPTION: grant.user_id == response user_id, grant.device_id == the device_id we sent, 0 < expires_at - authenticated_at <= 72 h (+60 s tolerance), expires_at > now, authenticated_at <= now + 5 min — see docs/osp-60-contract-assumptions.md
             if (dto.userId != response.userId || dto.deviceId != ourDeviceId) return null
             // OSP-60 ASSUMPTION: authenticated_at / expires_at are ISO-8601 with offset ("…Z" or "+00:00") — see docs/osp-60-contract-assumptions.md
-            val authenticatedAt = runCatching { OffsetDateTime.parse(dto.authenticatedAt).toInstant() }.getOrNull()
-                ?: return null
-            val expiresAt = runCatching { OffsetDateTime.parse(dto.expiresAt).toInstant() }.getOrNull()
-                ?: return null
+            val authenticatedAt = parseInstant(dto.authenticatedAt) ?: return null
+            val expiresAt = parseInstant(dto.expiresAt) ?: return null
             val validity = Duration.between(authenticatedAt, expiresAt)
             if (validity.isNegative || validity.isZero || validity > MAX_GRANT) return null
+            if (!expiresAt.isAfter(now)) return null // already expired
+            if (authenticatedAt.isAfter(now.plus(MAX_CLOCK_SKEW))) return null // dated in the future
             return StoredGrant(
                 userId = dto.userId,
                 deviceId = dto.deviceId,
@@ -136,6 +145,14 @@ class LoginUseCase(
                 expiresAt = expiresAt,
             )
         }
+
+        /**
+         * ISO-8601 with offset -> Instant at millisecond precision (what the store keeps). Absurd
+         * years would make toEpochMilli() throw ArithmeticException later; they are rejected here.
+         */
+        private fun parseInstant(value: String): Instant? = runCatching {
+            Instant.ofEpochMilli(OffsetDateTime.parse(value).toInstant().toEpochMilli())
+        }.getOrNull()
     }
 }
 

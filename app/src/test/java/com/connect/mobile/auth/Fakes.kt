@@ -11,8 +11,23 @@ import com.connect.mobile.data.supabase.SupabaseAuthGateway
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.test.TestCoroutineScheduler
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneId
+import java.time.ZoneOffset
 
 class Events : ArrayList<String>()
+
+/** "Now" for the tests: 30 s after FakeBackend's default authenticated_at. */
+val TEST_NOW: Instant = Instant.parse("2026-11-19T10:00:30Z")
+
+/** Wall clock that follows the test scheduler's virtual time, starting at [base]. */
+class SchedulerClock(private val scheduler: TestCoroutineScheduler, private val base: Instant = TEST_NOW) : Clock() {
+    override fun instant(): Instant = base.plusMillis(scheduler.currentTime)
+    override fun getZone(): ZoneId = ZoneOffset.UTC
+    override fun withZone(zone: ZoneId): Clock = this
+}
 
 class FakeGateway(private val events: Events) : SupabaseAuthGateway {
     var outcome: SignInOutcome = SignInOutcome.Success

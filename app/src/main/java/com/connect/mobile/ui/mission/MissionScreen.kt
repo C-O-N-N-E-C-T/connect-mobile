@@ -26,10 +26,11 @@ import com.connect.mobile.data.session.StoredGrant
 import com.connect.mobile.ui.common.ExpiryFormatter
 import com.connect.mobile.ui.common.SupplementaryDisclaimer
 
-// TODO(OSP-73): OfflineGrantPolicy gate (expiry) + BiometricPrompt before showing Field Rescuer Mode.
+// TODO(OSP-73): OfflineGrantPolicy gate (monotonic clock) + BiometricPrompt before showing Field Rescuer Mode.
 @Composable
 fun MissionScreen(
     grant: StoredGrant,
+    expired: Boolean,
     onEndMission: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -43,8 +44,17 @@ fun MissionScreen(
             .padding(24.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
-        Text(stringResource(R.string.mission_title), style = MaterialTheme.typography.headlineSmall)
-        Text(stringResource(R.string.mission_authenticated_until, expiry), style = MaterialTheme.typography.bodyLarge)
+        if (expired) {
+            // Wall-clock expiry (review R2): no "active" claim; only End Mission / Log Out remains.
+            Text(
+                stringResource(R.string.mission_expired),
+                style = MaterialTheme.typography.titleMedium,
+                color = MaterialTheme.colorScheme.error,
+            )
+        } else {
+            Text(stringResource(R.string.mission_title), style = MaterialTheme.typography.headlineSmall)
+            Text(stringResource(R.string.mission_authenticated_until, expiry), style = MaterialTheme.typography.bodyLarge)
+        }
         Button(onClick = { confirm = true }, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.mission_end_button))
         }

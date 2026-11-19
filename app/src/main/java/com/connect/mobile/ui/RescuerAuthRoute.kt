@@ -30,7 +30,12 @@ fun RescuerAuthRoute(viewModel: RescuerAuthViewModel) {
         when (val s = state) {
             AuthUiState.Bootstrapping -> Busy(R.string.loading, modifier)
             AuthUiState.LoggingOut -> Busy(R.string.mission_logging_out, modifier)
-            is AuthUiState.MissionActive -> MissionScreen(s.grant, onEndMission = viewModel::endMission, modifier = modifier)
+            is AuthUiState.MissionActive -> MissionScreen(
+                grant = s.grant,
+                expired = s.expired,
+                onEndMission = viewModel::endMission,
+                modifier = modifier,
+            )
             else -> LoginScreen(
                 state = s,
                 form = form,

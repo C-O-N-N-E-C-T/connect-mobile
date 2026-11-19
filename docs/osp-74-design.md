@@ -244,7 +244,13 @@ const val GRANT_JSON_KEY = "offline_mission_grant"
   - `grant.user_id == user_id`
   - `grant.device_id ==` our `device_id`
   - `0 < expires_at - authenticated_at ≤ 72 h + 60 s`
-- Validity over time (expiry, monotonic clock) belongs to OSP-73.
+  - `expires_at > now` and `authenticated_at ≤ now + 5 min` (wall clock, review R2, approved
+    2026-11-19). `now` comes from an injected `java.time.Clock`. Consequence: a device clock more
+    than 5 min behind the server makes every login fail with the "invalid deployment grant" text.
+  - Both timestamps must fit `toEpochMilli()` (absurd years are rejected instead of crashing in
+    `writeGrant`). They are kept at millisecond precision, as stored.
+- Validity over time with a monotonic clock, and the biometric lock, belong to OSP-73. OSP-74 only
+  shows an "expired" state on the wall clock (section 4.1).
 
 ### 3.6 Error mapping (`AuthError` to UI message; the full EN/TR text is in strings.xml)
 | Source | AuthError | Teardown? | UI message (EN) |
@@ -281,7 +287,7 @@ The server `message` is logged in debug builds only and never shown, to keep the
 
 ### 4.1 States (`RescuerAuthViewModel.state: StateFlow<AuthUiState>`)
 ```
-Bootstrapping ──grant present──────────────────────────────► MissionActive(grant)
+Bootstrapping ──grant present──────────────────────────────► MissionActive(grant, expired = expires_at ≤ now)
      │        └─session w/o grant → teardown(local only) ─┐
      └─no grant ──────────────────────────────────────────┴► LoginIdle(error = null)
 LoginIdle ──submit, input invalid──► LoginIdle(InvalidInput)
@@ -303,8 +309,15 @@ MissionActive ──"End Mission / Log Out" → confirm dialog──► LoggingO
   active (a stray nested timeout) is treated as a `Server` failure with the full teardown.
 - The password lives only in ViewModel memory and is cleared after each attempt.
 - The JWT `user_role` claim is **not** used for decisions. Only `SessionResponse.role` is.
-- Grant expiry and gating of `MissionActive` are not enforced here:
-  `// TODO(OSP-73): OfflineGrantPolicy gate + BiometricPrompt`. Victim and Relay modes stay
+- **Expired state (review R2, approved 2026-11-19).** `MissionActive.expired` is true when
+  `expires_at ≤ now` on the wall clock (injected `Clock`), at start-up and while the screen is open:
+  the ViewModel re-checks at expiry and at least every 60 s, so a changed device clock is noticed
+  too. The screen then shows "Offline deployment authorization has expired. Connect to the internet
+  and log in again." (TR: "Çevrimdışı görev yetkisinin süresi doldu. İnternete bağlanıp yeniden
+  giriş yapın.") instead of "active … until", and keeps the End Mission / Log Out action. Nothing is
+  deleted automatically on expiry.
+- The monotonic-clock policy and the biometric gate are not enforced here:
+  `// TODO(OSP-73): OfflineGrantPolicy gate (monotonic clock) + BiometricPrompt`. Victim and Relay modes stay
   auth-free; nothing here blocks them.
 
 ### 4.2 Teardown / logout sequence (`LogoutUseCase.invoke(remote: Boolean)`)
@@ -356,6 +369,8 @@ after up to ~15 s of remote calls, so a process death in that window kept offlin
   - `formatted` is `DateTimeFormatter.ofLocalizedDateTime(FormatStyle.MEDIUM, FormatStyle.SHORT)`
     with `ZoneId.systemDefault()` and the current locale, plus the zone ID (for example
     "Europe/Istanbul") so the zone is never ambiguous.
+  - When the grant has expired (section 4.1), the title and the "until" line are replaced by the
+    error-coloured `R.string.mission_expired` text.
   - An "End Mission / Log Out" button (EN) / "Görevi Bitir / Çıkış Yap" (TR), with a confirm
     dialog. The dialog warns that offline access ends until the next online login and says that
     unsynced victim records are kept.

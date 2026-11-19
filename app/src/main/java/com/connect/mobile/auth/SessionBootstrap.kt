@@ -13,8 +13,9 @@ sealed interface BootstrapResult {
 /**
  * Start-up decision. A Supabase session WITHOUT a grant is an interrupted or rejected login: wipe it
  * locally (no remote calls). Store read errors propagate; the ViewModel shows the generic error.
+ * An expired grant still gives MissionActive: the ViewModel shows it as expired (wall clock, R2).
  *
- * TODO(OSP-73): OfflineGrantPolicy gate (expiry, monotonic clock) + BiometricPrompt before MissionActive.
+ * TODO(OSP-73): OfflineGrantPolicy gate (monotonic clock) + BiometricPrompt before MissionActive.
  */
 class SessionBootstrap(
     private val store: SessionStore,

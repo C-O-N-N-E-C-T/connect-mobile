@@ -15,6 +15,9 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.IOException
+import java.time.Clock
+import java.time.Instant
+import java.time.ZoneOffset
 
 class LoginUseCaseTest {
     private val events = Events()
@@ -30,6 +33,7 @@ class LoginUseCaseTest {
         store = store,
         deviceIdProvider = DeviceIdProvider(store) { "Test Phone" },
         logout = logout,
+        clock = Clock.fixed(TEST_NOW, ZoneOffset.UTC),
     )
 
     private val fullTeardown = listOf("clearGrant", "backendLogout", "signOut", "clearLocalSession", "clearAuth")
@@ -93,6 +97,13 @@ class LoginUseCaseTest {
             FakeBackend.rescuerResponse(expiresAt = "2026-11-22 10:00"), // not ISO-8601 with offset
             FakeBackend.rescuerResponse(grantUserId = "someone-else"),
             FakeBackend.rescuerResponse(grantDeviceId = "other-device"),
+            // R2 wall-clock checks (now = 2026-11-19T10:00:30Z)
+            FakeBackend.rescuerResponse(authenticatedAt = "2026-11-16T10:00:00Z", expiresAt = "2026-11-19T10:00:00Z"), // expired
+            FakeBackend.rescuerResponse(authenticatedAt = "2026-11-16T10:00:30Z", expiresAt = "2026-11-19T10:00:30Z"), // expires exactly now
+            FakeBackend.rescuerResponse(authenticatedAt = "2026-11-19T10:05:31Z", expiresAt = "2026-11-20T10:00:00Z"), // > now + 5 min
+            FakeBackend.rescuerResponse(authenticatedAt = "2030-01-01T00:00:00Z", expiresAt = "2030-01-04T00:00:00Z"), // future-dated
+            // Absurd year: toEpochMilli() would throw ArithmeticException in writeGrant.
+            FakeBackend.rescuerResponse(authenticatedAt = "+999999999-12-31T00:00:00Z", expiresAt = "+999999999-12-31T01:00:00Z"),
         )
         for (response in bad) {
             events.clear()
@@ -106,6 +117,26 @@ class LoginUseCaseTest {
     @Test fun grantUpTo72hPlus60sIsAccepted() = runTest {
         backend.bind = { BackendResult.Ok(FakeBackend.rescuerResponse(expiresAt = "2026-11-22T10:01:00Z")) }
         assertTrue(useCase()("x@y.io", "pw") is LoginResult.Success)
+    }
+
+    @Test fun clockSkewUpToFiveMinutesIsAccepted() = runTest {
+        backend.bind = {
+            BackendResult.Ok(FakeBackend.rescuerResponse(authenticatedAt = "2026-11-19T10:05:30Z", expiresAt = "2026-11-22T10:05:30Z"))
+        }
+        assertTrue(useCase()("x@y.io", "pw") is LoginResult.Success)
+    }
+
+    /** R12: non-UTC offsets and fractional seconds (JS toISOString() gives ".000Z") are accepted. */
+    @Test fun offsetsAndFractionalSecondsAreParsed() = runTest {
+        backend.bind = {
+            BackendResult.Ok(
+                FakeBackend.rescuerResponse(authenticatedAt = "2026-11-19T13:00:00.000+03:00", expiresAt = "2026-11-22T10:00:00.123Z"),
+            )
+        }
+        val r = useCase()("x@y.io", "pw") as LoginResult.Success
+        assertEquals(Instant.parse("2026-11-19T10:00:00Z"), r.grant.authenticatedAt)
+        assertEquals(Instant.parse("2026-11-22T10:00:00.123Z"), r.grant.expiresAt)
+        assertEquals(r.grant, store.readGrant())
     }
 
     @Test fun badCredentialsStoreNothingAndSkipBackend() = runTest {

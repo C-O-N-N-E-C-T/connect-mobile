@@ -37,4 +37,7 @@ data class StoredGrant(
     val role: String,
     val authenticatedAt: Instant,
     val expiresAt: Instant,
-)
+) {
+    /** Wall clock only (review R2); the monotonic-clock policy is OSP-73. */
+    fun isExpiredAt(now: Instant): Boolean = !expiresAt.isAfter(now)
+}

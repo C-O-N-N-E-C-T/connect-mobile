@@ -64,6 +64,8 @@ For a **coordinator or administrator** (if you answer 200), the grant is absent 
   - `grant.user_id == user_id`
   - `grant.device_id ==` the `device_id` the app sent
   - `0 < expires_at − authenticated_at ≤ 72 h` (plus 60 s tolerance)
+  - `expires_at` is later than the device's current time, and `authenticated_at` is at most 5 min
+    after it (so server and device clocks must agree within 5 min)
 
 ### A3. Coordinator / administrator
 The app accepts **either** of these, and both have the same effect: the role error is shown, then
@@ -192,6 +194,8 @@ Content-Type: application/json
   - `grant.user_id == user_id`
   - `grant.device_id ==` uygulamanın gönderdiği `device_id`
   - `0 < expires_at − authenticated_at ≤ 72 saat` (60 sn tolerans)
+  - `expires_at` cihazın şu anki saatinden sonradır ve `authenticated_at` bu saatten en fazla 5 dk
+    sonradır (sunucu ve cihaz saatleri en fazla 5 dk farklı olabilir)
 
 ### A3. Koordinatör / yönetici
 Uygulama aşağıdakilerden **ikisini de** kabul eder; ikisinin sonucu aynıdır: rol hatası gösterilir,

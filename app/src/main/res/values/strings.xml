@@ -21,6 +21,7 @@
 
     <string name="mission_title">Field Rescuer Mode active</string>
     <string name="mission_authenticated_until">Authenticated for offline deployment until %1$s</string>
+    <string name="mission_expired">Offline deployment authorization has expired. Connect to the internet and log in again.</string>
     <string name="mission_end_button">End Mission / Log Out</string>
     <string name="mission_end_dialog_title">End mission?</string>
     <string name="mission_end_dialog_text">Offline access ends until your next online login. Unsynced victim records on this device are kept.</string>

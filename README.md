@@ -19,7 +19,8 @@ Only the **Field Rescuer pre-deployment login** exists so far.
    signed out at once.
 4. The app stores the session and the **72-hour offline mission grant**. It then shows
    *"Authenticated for offline deployment until &lt;time&gt;"* and the supplementary-channel
-   disclaimer (NFR-SAFE-03).
+   disclaimer (NFR-SAFE-03). After that time (device clock) the screen says the offline deployment
+   authorization has expired and only **End Mission / Log Out** remains.
 5. **End Mission / Log Out** deletes the local grant and tokens only. Unsynced victim records and the
    device ID are kept.
 
@@ -28,7 +29,7 @@ with no exceptions, also in debug builds.
 
 Not built yet (other stories):
 - encrypted storage (OSP-75; the current store is a temporary plaintext DataStore);
-- grant expiry enforcement and the biometric lock (OSP-73);
+- the full grant expiry policy (monotonic clock) and the biometric lock (OSP-73);
 - reconnection (OSP-76);
 - the backend endpoints themselves (OSP-60).
 
@@ -133,7 +134,8 @@ app/src/main/res/xml/network_security_config.xml   cleartextTrafficPermitted="fa
    hemen çıkış yaptırılır.
 4. Uygulama oturumu ve **72 saatlik çevrimdışı görev yetkisini** (grant) saklar. Ardından
    *"Çevrimdışı görev için &lt;zaman&gt; tarihine kadar yetkilendirildi"* metnini ve yardımcı kanal
-   uyarısını (NFR-SAFE-03) gösterir.
+   uyarısını (NFR-SAFE-03) gösterir. Bu zaman geçince (cihaz saati) ekran çevrimdışı görev yetkisinin
+   süresinin dolduğunu söyler; yalnızca **Görevi Bitir / Çıkış Yap** kalır.
 5. **Görevi Bitir / Çıkış Yap** yalnızca yerel grant'i ve token'ları siler. Senkronize edilmemiş
    kazazede kayıtları ve cihaz kimliği korunur.
 
@@ -143,7 +145,7 @@ böyledir.
 
 Henüz yapılmayanlar (başka hikâyeler):
 - şifreli depolama (OSP-75; şu anki depo geçici, düz metin bir DataStore'dur);
-- grant süresinin uygulanması ve biyometrik kilit (OSP-73);
+- grant süresinin tam politikası (monoton saat) ve biyometrik kilit (OSP-73);
 - yeniden bağlanma (OSP-76);
 - backend uç noktalarının kendisi (OSP-60).
 
