@@ -22,6 +22,9 @@ interface SessionStore {
     suspend fun readGrant(): StoredGrant?
     suspend fun writeGrant(grant: StoredGrant)
 
+    /** Removes the grant keys ONLY (first step of logout, design 4.2); the session and device_id stay. */
+    suspend fun clearGrant()
+
     /** Removes the supabase session and grant keys ONLY. device_id and any other data are kept. */
     suspend fun clearAuth()
 

@@ -22,6 +22,7 @@ class FakeGateway(private val events: Events) : SupabaseAuthGateway {
     var initialized = false
     var signInCalls = 0
     var clearedAfterInit: Boolean? = null
+    var clearError: Throwable? = null
 
     override suspend fun awaitInitialized() {
         if (!initialized) {
@@ -50,6 +51,7 @@ class FakeGateway(private val events: Events) : SupabaseAuthGateway {
     override suspend fun clearLocalSession() {
         clearedAfterInit = initialized
         events += "clearLocalSession"
+        clearError?.let { throw it }
     }
 }
 
@@ -101,6 +103,10 @@ class InMemorySessionStore(private val events: Events = Events()) : SessionStore
     override suspend fun deleteSupabaseSession() { session = null }
     override suspend fun readGrant() = grantState.value
     override suspend fun writeGrant(grant: StoredGrant) { grantState.value = grant }
+    override suspend fun clearGrant() {
+        events += "clearGrant"
+        grantState.value = null
+    }
     override suspend fun clearAuth() {
         events += "clearAuth"
         session = null
@@ -109,8 +115,13 @@ class InMemorySessionStore(private val events: Events = Events()) : SessionStore
     override val grant: Flow<StoredGrant?> = grantState
 }
 
-/** Records clearAuth on top of a real store. */
+/** Records clearGrant / clearAuth on top of a real store. */
 class RecordingSessionStore(private val delegate: SessionStore, private val events: Events) : SessionStore by delegate {
+    override suspend fun clearGrant() {
+        events += "clearGrant"
+        delegate.clearGrant()
+    }
+
     override suspend fun clearAuth() {
         events += "clearAuth"
         delegate.clearAuth()

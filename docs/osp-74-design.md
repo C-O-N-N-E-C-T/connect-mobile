@@ -125,6 +125,7 @@ interface SessionStore {
     suspend fun deleteSupabaseSession()                // ONLY the session key
     suspend fun readGrant(): StoredGrant?
     suspend fun writeGrant(grant: StoredGrant)
+    suspend fun clearGrant()                           // removes {grant_*} ONLY (logout step 1)
     suspend fun clearAuth()                            // removes {supabase_session, grant_*} ONLY
     val grant: Flow<StoredGrant?>
 }
@@ -283,22 +284,36 @@ MissionActive ──"End Mission / Log Out" → confirm dialog──► LoggingO
 
 ### 4.2 Teardown / logout sequence (`LogoutUseCase.invoke(remote: Boolean)`)
 Shared by "End Mission", role rejection, every post-sign-in failure, and the stale-session start-up
-rule.
-1. `gateway.awaitInitialized()` (bounded, see section 3.2), then read `token = gateway.accessTokenOrNull()`.
-2. If `remote` is true and a token exists: `withTimeoutOrNull(5 s) { backend.logout(token) }`
-   (LOGOUT audit and binding clear). Every exception is caught.
+rule. (Order changed after review finding R1, approved 2026-11-19: before, the grant was deleted only
+after up to ~15 s of remote calls, so a process death in that window kept offline access.)
+1. **Immediately**, inside `withContext(NonCancellable)`: `store.clearGrant()` deletes the grant keys
+   only. The grant is the offline-access gate. Removing it does not touch the in-memory Supabase
+   session that the remote calls below still need, and the persisted tokens stay until step 4.
+   - The grant is deleted *before* the token is read. Reading the token waits for the gateway
+     initialisation (up to 5 s), and that wait must not keep the grant on disk.
+2. If `remote` is true: `gateway.awaitInitialized()` (bounded, see section 3.2), then snapshot
+   `token = gateway.accessTokenOrNull()` in memory. If a token exists:
+   `withTimeoutOrNull(5 s) { backend.logout(token) }` (LOGOUT audit and binding clear). Every
+   exception is caught.
 3. If `remote` is true: `withTimeoutOrNull(5 s) { gateway.signOut() }` (Supabase `/logout`, scope
    LOCAL). Every exception is caught.
    - Finding: the `signOut()` in auth-kt 3.9.0 clears local data only on `RestException`.
    - On no network it throws `HttpRequestException` (an IOException) **before** clearing.
    - So it is never relied on for the wipe.
-4. **Always**, inside `withContext(NonCancellable)`:
-   - `gateway.clearLocalSession()`, which calls `auth.clearSession()`. This stops auto-refresh, so
-     the tokens cannot be saved again, and it calls our `deleteSession()`.
-   - Then `store.clearAuth()`, which is the scoped key removal.
+4. **Always**, in `finally` inside `withContext(NonCancellable)`, every step unconditional:
+   - `gateway.awaitInitialized()`, then `gateway.clearLocalSession()`, which calls
+     `auth.clearSession()`. This stops auto-refresh, so the tokens cannot be saved again, and it
+     calls our `deleteSession()`.
+   - Then `store.clearAuth()`, which is the scoped removal of `{supabase_session, grant_*}`.
+   - Each step catches `Throwable`, including a `CancellationException` thrown *by the callee*
+     (review R9), so a failing or cancelling step can never skip `clearAuth()`.
+   - `invoke` returns `false` only if `clearAuth()` itself failed (store error); the UI then shows
+     the generic error instead of "logged out" (R4).
 5. `device_id`, any other DataStore key and every other app file stay untouched.
    `LogoutUseCase` depends only on `SessionStore`, `AuthBackend` and `SupabaseAuthGateway`. It has
    no `Context` and no DB handle, so it cannot reach the future victim DB. This is tested.
+6. Test: `backend.logout` reads the store and then throws (a stand-in for a process death during
+   the remote part). The grant is already gone while the tokens are still present.
 
 ## 5. Screens (Compose, Material3, EN default + values-tr)
 - **LoginScreen:**

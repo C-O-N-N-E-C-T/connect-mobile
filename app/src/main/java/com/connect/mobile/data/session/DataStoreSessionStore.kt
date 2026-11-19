@@ -53,6 +53,10 @@ class DataStoreSessionStore(private val dataStore: DataStore<Preferences>) : Ses
         }
     }
 
+    override suspend fun clearGrant() {
+        dataStore.edit { p -> GRANT_KEYS.forEach { p.remove(it) } }
+    }
+
     override suspend fun clearAuth() {
         // Explicit key list; never clear() and never delete the file. DEVICE_ID is intentionally absent.
         dataStore.edit { p -> AUTH_KEYS.forEach { p.remove(it) } }
@@ -86,10 +90,10 @@ class DataStoreSessionStore(private val dataStore: DataStore<Preferences>) : Ses
         internal val GRANT_AUTHENTICATED_AT = longPreferencesKey("grant_authenticated_at")
         internal val GRANT_EXPIRES_AT = longPreferencesKey("grant_expires_at")
 
-        private val AUTH_KEYS: List<Preferences.Key<*>> = listOf(
-            SUPABASE_SESSION, GRANT_USER_ID, GRANT_DEVICE_ID, GRANT_ROLE,
-            GRANT_AUTHENTICATED_AT, GRANT_EXPIRES_AT,
+        private val GRANT_KEYS: List<Preferences.Key<*>> = listOf(
+            GRANT_USER_ID, GRANT_DEVICE_ID, GRANT_ROLE, GRANT_AUTHENTICATED_AT, GRANT_EXPIRES_AT,
         )
+        private val AUTH_KEYS: List<Preferences.Key<*>> = listOf(SUPABASE_SESSION) + GRANT_KEYS
 
         /** [produceFile] lets tests use a temp file; the app passes `filesDir/datastore/FILE_NAME`. */
         fun create(

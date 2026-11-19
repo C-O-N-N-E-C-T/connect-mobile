@@ -106,7 +106,8 @@ Authorization: Bearer <supabase access_token>
   - **also right after a rejected login** (role rejection, any backend error, invalid grant), because
     `/auth/session` may already have bound the session. So a rejected coordinator produces a LOGOUT
     audit entry. Tell us if that is a problem.
-- The app then calls Supabase `/logout` (scope `local`) and deletes the local tokens and the grant.
+- **Order:** the app deletes the local grant first, then calls `/auth/logout` and Supabase `/logout`
+  (scope `local`) with the access token it holds in memory, and finally deletes the local tokens.
 
 ### Where each assumption lives in the Android code
 
@@ -232,8 +233,8 @@ Authorization: Bearer <supabase access_token>
   - **reddedilen bir girişten hemen sonra da** (rol reddi, herhangi bir backend hatası, geçersiz
     grant). Çünkü `/auth/session` oturumu zaten bağlamış olabilir. Bu yüzden reddedilen bir
     koordinatör için de LOGOUT denetim kaydı oluşur. Sorun olursa bize bildirin.
-- Uygulama ardından Supabase `/logout` (scope `local`) çağırır, sonra yerel token'ları ve grant'i
-  siler.
+- **Sıra:** uygulama önce yerel grant'i siler, sonra bellekte tuttuğu access token ile
+  `/auth/logout` ve Supabase `/logout` (scope `local`) çağırır, en sonda yerel token'ları siler.
 
 ### Varsayımların Android kodundaki yerleri
 

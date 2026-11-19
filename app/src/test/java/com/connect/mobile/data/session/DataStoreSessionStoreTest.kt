@@ -52,6 +52,18 @@ class DataStoreSessionStoreTest {
         assertTrue(file.exists())
     }
 
+    @Test fun clearGrantKeepsSessionAndDeviceId() = runTest {
+        val h = TestStoreHandle(tmp.newFile("s.preferences_pb").also { it.delete() })
+        val id = h.store.getOrCreateDeviceId { "fixed-id" }
+        h.store.writeSupabaseSession("{}")
+        h.store.writeGrant(grant)
+        h.store.clearGrant()
+        assertNull(h.store.readGrant())
+        assertEquals("{}", h.store.readSupabaseSession())
+        assertEquals(id, h.store.getOrCreateDeviceId { "other" })
+        h.close()
+    }
+
     @Test fun deleteSupabaseSessionKeepsGrant() = runTest {
         val h = TestStoreHandle(tmp.newFile("s.preferences_pb").also { it.delete() })
         h.store.writeSupabaseSession("{}")

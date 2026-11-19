@@ -27,7 +27,7 @@ class LoginUseCaseTest {
         logout = logout,
     )
 
-    private val fullTeardown = listOf("backendLogout", "signOut", "clearLocalSession", "clearAuth")
+    private val fullTeardown = listOf("clearGrant", "backendLogout", "signOut", "clearLocalSession", "clearAuth")
 
     @Test fun rescuerStoresGrantAndSendsDeviceInfo() = runTest {
         val r = useCase()("rescuer@connect.internal", "pw") as LoginResult.Success
@@ -106,7 +106,7 @@ class LoginUseCaseTest {
     @Test fun badCredentialsStoreNothingAndSkipBackend() = runTest {
         gateway.outcome = SignInOutcome.Failure(AuthError.BadCredentials)
         assertEquals(LoginResult.Failure(AuthError.BadCredentials), useCase()("x@y.io", "pw"))
-        assertEquals(listOf("signIn", "clearLocalSession", "clearAuth"), events)
+        assertEquals(listOf("signIn", "clearGrant", "clearLocalSession", "clearAuth"), events)
         assertNull(store.readGrant())
     }
 

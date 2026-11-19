@@ -26,7 +26,7 @@ class SessionBootstrapTest {
     @Test fun sessionWithoutGrantIsWipedLocally() = runTest {
         store.session = "{}"
         assertEquals(BootstrapResult.LoginRequired, bootstrap())
-        assertEquals(listOf("clearLocalSession", "clearAuth"), events)
+        assertEquals(listOf("clearGrant", "clearLocalSession", "clearAuth"), events)
         assertNull(store.session)
     }
 

@@ -4,6 +4,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import com.connect.mobile.data.session.StoredGrant
 import com.connect.mobile.data.session.TestStoreHandle
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.awaitCancellation
 import kotlinx.coroutines.flow.first
@@ -50,7 +51,7 @@ class LogoutUseCaseTest {
         val victimDb = tmp.newFile("victims.db").apply { writeBytes(byteArrayOf(1, 2, 3)) }
         val h = seeded()
         LogoutUseCase(gateway, backend, RecordingSessionStore(h.store, events))(remote = true)
-        assertEquals(listOf("backendLogout", "signOut", "clearLocalSession", "clearAuth"), events)
+        assertEquals(listOf("clearGrant", "backendLogout", "signOut", "clearLocalSession", "clearAuth"), events)
         assertWipedButKept(h)
         assertArrayEquals(byteArrayOf(1, 2, 3), victimDb.readBytes())
         h.close()
@@ -99,6 +100,40 @@ class LogoutUseCaseTest {
         job.cancel()
         job.join()
         assertTrue(events.contains("clearLocalSession"))
+        assertWipedButKept(h)
+        h.close()
+    }
+
+    /** R1: a process death during the remote part must not leave the grant behind. */
+    @Test fun grantIsDeletedBeforeAnyRemoteCall() = runTest {
+        val h = seeded()
+        var grantDuringRemote: StoredGrant? = grant
+        var sessionDuringRemote: String? = null
+        backend.logoutBehavior = {
+            grantDuringRemote = h.store.readGrant()
+            sessionDuringRemote = h.store.readSupabaseSession()
+            throw IllegalStateException("process dies here")
+        }
+        LogoutUseCase(gateway, backend, h.store)(remote = true)
+        assertNull(grantDuringRemote)
+        assertEquals("{}", sessionDuringRemote) // tokens are still there for the remote logout
+        assertWipedButKept(h)
+        h.close()
+    }
+
+    @Test fun cancellationFromCalleeInsideWipeStillClearsAuth() = runTest {
+        val h = seeded()
+        gateway.clearError = CancellationException("supabase-kt internal job cancelled")
+        val wiped = LogoutUseCase(gateway, backend, h.store)(remote = true)
+        assertTrue(wiped)
+        assertWipedButKept(h)
+        h.close()
+    }
+
+    @Test fun failingClearLocalSessionStillClearsAuth() = runTest {
+        val h = seeded()
+        gateway.clearError = IllegalStateException("boom")
+        LogoutUseCase(gateway, backend, h.store)(remote = false)
         assertWipedButKept(h)
         h.close()
     }
