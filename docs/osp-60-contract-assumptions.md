@@ -158,8 +158,24 @@ Content-Type: application/json
 - `device_name`, `"<üretici> <model>"` biçimindedir; en fazla 100 karakterdir.
 
 ### A2. `POST /api/v1/auth/session`: 200 yanıtı
-**Kurtarıcı** için yanıt, yukarıdaki İngilizce bölümdeki A2 örneğiyle aynıdır (alan adları birebir).
-**Koordinatör veya yönetici** için (200 dönerseniz) yetki (grant) alanı yoktur ya da `null`'dır.
+**Kurtarıcı** için:
+```json
+{
+  "user_id": "8d0f6a52-1c3e-4b7a-9f21-5e6d7c8b9a01",
+  "role": "rescuer",
+  "device_id": "3f1c2b9e-7a4d-4e8b-9c1a-2d5e6f708192",
+  "offline_mission_grant": {
+    "user_id": "8d0f6a52-1c3e-4b7a-9f21-5e6d7c8b9a01",
+    "device_id": "3f1c2b9e-7a4d-4e8b-9c1a-2d5e6f708192",
+    "authenticated_at": "2026-11-19T10:00:00Z",
+    "expires_at": "2026-11-22T10:00:00Z"
+  }
+}
+```
+**Koordinatör veya yönetici** için (200 dönerseniz) grant alanı yoktur (ya da `null`'dır):
+```json
+{"user_id":"…","role":"coordinator","device_id":"3f1c2b9e-7a4d-4e8b-9c1a-2d5e6f708192"}
+```
 - **Grant anahtarı:** `offline_mission_grant`.
 - **Rol değerleri:** `role`, `public.user_profiles` tablosundaki küçük harfli değerdir: `rescuer`,
   `coordinator` veya `administrator`. Uygulama karar verirken **yalnızca** bu alana bakar; JWT'deki
@@ -182,7 +198,11 @@ ardından çıkış yapılır.
 
 ### A4. Hatalar
 Hatalar ortak hata sözleşmesine uyar: `{ "error_code": "...", "message": "..." }`
-(`connect-backend/src/types/errors.ts`). `message` yalnızca debug derlemede loglanır, kullanıcıya hiç
+(`connect-backend/src/types/errors.ts`). Örnek:
+```json
+{"error_code":"DEVICE_REVOKED","message":"Device has been revoked"}
+```
+`message` yalnızca debug derlemede loglanır, kullanıcıya hiç
 gösterilmez. Uygulama `error_code`'a göre yerelleştirilmiş metin gösterir:
 
 | HTTP | `error_code` | Uygulamanın tepkisi |
@@ -216,6 +236,19 @@ Authorization: Bearer <supabase access_token>
   siler.
 
 ### Varsayımların Android kodundaki yerleri
-Yukarıdaki İngilizce bölümdeki "Where each assumption lives" tablosuna bakın; dosya ve sembol adları
-aynıdır. Sözleşmeyi sabitleyen testler: `KtorAuthBackendTest.kt` (birebir yol, başlık, JSON ve hata
-kodları) ve `LoginUseCaseTest.kt`.
+
+| # | Dosya (`app/src/...`) | Sembol |
+|---|---|---|
+| A1 | `main/.../data/backend/AuthDtos.kt` | `SessionRequest` |
+| A1 | `main/.../data/backend/KtorAuthBackend.kt` | `bindSession`, `SESSION_PATH` |
+| A2 | `main/.../data/backend/AuthDtos.kt` | `SessionResponse`, `OfflineMissionGrantDto`, `GRANT_JSON_KEY` |
+| A2 | `main/.../auth/LoginUseCase.kt` | `RESCUER_ROLE`, `validateGrant` (zaman damgaları, kontrol) |
+| A3 | `main/.../auth/LoginUseCase.kt` | `invoke` içindeki rol kontrolü, `toAuthError` |
+| A4 | `main/.../auth/LoginUseCase.kt` | `BackendError.toAuthError()` |
+| A4 | `main/.../data/backend/KtorAuthBackend.kt` | `execute` (`ErrorBody` çözümleme) |
+| A5 | `main/.../data/backend/KtorAuthBackend.kt` | `logout`, `LOGOUT_PATH` |
+| A5 | `main/.../auth/LogoutUseCase.kt` | `invoke` (sıra, zaman aşımı, rol reddinden sonra) |
+| hepsi | `debug/.../data/backend/FakeAuthBackend.kt` | bu sözleşmeyi uygulayan debug sahte backend'i |
+
+Sözleşmeyi sabitleyen testler: `app/src/test/.../data/backend/KtorAuthBackendTest.kt` (birebir yol,
+başlık, JSON ve hata kodları) ve `app/src/test/.../auth/LoginUseCaseTest.kt`.

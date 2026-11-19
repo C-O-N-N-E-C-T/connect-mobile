@@ -31,6 +31,13 @@ Implementation notes (deviations found while coding, 2026-11-19):
   OS message "CLEARTEXT communication … not permitted" is visible (section 7, manual check 4). Tokens,
   passwords, headers and bodies are never logged.
 - `AuthError` was added in 1.3 (the gateway maps Supabase errors to it), not 1.4.
+- AGP 9 creates unit-test tasks only for the tested build type; `gradle.properties` sets
+  `android.onlyEnableUnitTestForTheTestedBuildType=false` so `testReleaseUnitTest` exists (it proves
+  `src/test` does not depend on the debug-only fake).
+- supabase-kt's own logger is off (`LogLevel.NONE`): its exception messages include request URLs and
+  masked headers.
+- Extra files not in section 2: `util/AppLogger.kt`, `ui/RescuerAuthRoute.kt` (state -> screen),
+  `src/test/.../security/NetworkSecurityConfigTest.kt`.
 
 ## 1. Toolchain and library versions (verified 2026-11-19)
 

@@ -69,7 +69,9 @@ class AppContainer(context: Context) {
             val client = createSupabaseClient(config.supabaseUrl, config.supabaseAnonKey) {
                 // Same OkHttp engine type as the backend client, so the Network Security Config covers it.
                 httpEngine = OkHttp.create()
-                defaultLogLevel = if (BuildConfig.DEBUG) LogLevel.WARNING else LogLevel.NONE
+                // supabase-kt exception/log messages can include request URLs and (masked) headers:
+                // keep its logger off; AppLogger covers our own diagnostics without tokens.
+                defaultLogLevel = LogLevel.NONE
                 install(Auth) {
                     // Tokens live only in SessionStore, not in plaintext SharedPreferences (design 3.2).
                     sessionManager = StoreBackedSessionManager(sessionStore)

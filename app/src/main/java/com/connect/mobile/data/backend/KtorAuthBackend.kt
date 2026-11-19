@@ -22,6 +22,7 @@ class KtorAuthBackend(
 ) : AuthBackend {
     private val base = baseUrl.trimEnd('/')
 
+    // OSP-60 ASSUMPTION: POST {API_BASE_URL}/api/v1/auth/session with Authorization: Bearer <supabase access_token> and a JSON body — see docs/osp-60-contract-assumptions.md
     override suspend fun bindSession(
         accessToken: String,
         deviceId: String,

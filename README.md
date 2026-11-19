@@ -70,6 +70,13 @@ CONNECT_FAKE_BACKEND=true
 ```
 Install on a phone with USB debugging: `./gradlew installDebug`.
 
+### Supabase prerequisite (needed to log in)
+- The hosted Supabase project must have the connect-backend migrations applied (OSP-58 auth schema
+  and the custom access token hook, see `connect-backend/docs/supabase-settings.md`).
+- Each test user needs an active `public.user_profiles` row with a role.
+- Without them the token has no `user_role` claim, and the debug fake backend answers
+  *"This account is disabled"* for every user, including rescuers.
+
 ### Developing with the debug fake backend (HTTPS only)
 - **OSP-60 is not available yet.** Debug builds therefore use `FakeAuthBackend`:
   - Sign-in itself is **real**. It goes to your hosted Supabase project, so you need a real user.
@@ -154,10 +161,14 @@ Depo kökünde `local.properties` oluşturun. Android Studio dosyayı `sdk.dir` 
 > **`local.properties` dosyasını asla commit etmeyin.** Depo HERKESE AÇIKTIR; dosya zaten
 > `.gitignore` içindedir.
 
-Anahtarlar, yukarıdaki İngilizce bölümdeki örnekle aynıdır: `sdk.dir`, `SUPABASE_URL`,
-`SUPABASE_ANON_KEY`, `API_BASE_URL` ve yalnızca debug için `CONNECT_FAKE_BACKEND`.
-`CONNECT_FAKE_BACKEND` varsayılan olarak `true`'dur (sahte OSP-60 backend'i); `false` yapılırsa
-`API_BASE_URL` çağrılır.
+```properties
+sdk.dir=/Android/Sdk/yolu
+SUPABASE_URL=https://<proje-ref>.supabase.co
+SUPABASE_ANON_KEY=<Supabase panelindeki anon public anahtar>
+API_BASE_URL=https://<connect-backend sunucusu>
+# Yalnızca debug. Varsayılan true = sahte OSP-60 backend'i; false yapılırsa API_BASE_URL çağrılır.
+CONNECT_FAKE_BACKEND=true
+```
 - **Eksik anahtar:** uygulama yine derlenir, ancak giriş ekranı *"Bu sürüm çevrimiçi giriş için
   yapılandırılmamış."* mesajını gösterir.
 - **Sahte backend açıkken:** `API_BASE_URL` gerekmez; `SUPABASE_URL` ve `SUPABASE_ANON_KEY`
@@ -166,17 +177,23 @@ Anahtarlar, yukarıdaki İngilizce bölümdeki örnekle aynıdır: `sdk.dir`, `S
   token'ları hiçbir zaman loglamaz.
 
 ### Derleme ve test
-Komutlar İngilizce bölümdekiyle aynıdır:
-- `./gradlew assembleDebug`: debug APK üretir.
-- `./gradlew testDebugUnitTest`: JVM birim testlerini çalıştırır.
-- `./gradlew lintDebug`: Android lint'i çalıştırır.
-- `./gradlew assembleRelease`: imzasız release derlemesi (yalnızca derleme kontrolü).
-- `./gradlew connectedDebugAndroidTest`: USB ile bağlı telefonda veya emülatörde cihaz testleri
-  (cleartext engelinin kanıtı).
-- `./gradlew installDebug`: uygulamayı telefona kurar.
+```sh
+./gradlew assembleDebug                 # debug APK -> app/build/outputs/apk/debug/
+./gradlew testDebugUnitTest             # JVM birim testleri
+./gradlew lintDebug                     # Android lint
+./gradlew assembleRelease               # release derlemesi (imzasız, yalnızca derleme kontrolü)
+./gradlew connectedDebugAndroidTest     # USB'deki telefonda/emülatörde cihaz testleri (cleartext kanıtı)
+# her commit öncesi tam kontrol:
+./gradlew assembleDebug assembleRelease testDebugUnitTest lintDebug assembleDebugAndroidTest
+```
+USB hata ayıklaması açık bir telefona kurmak için: `./gradlew installDebug`.
 
-Her commit'ten önce tam kontrol:
-`./gradlew assembleDebug assembleRelease testDebugUnitTest lintDebug assembleDebugAndroidTest`.
+### Supabase ön koşulu (giriş için gerekli)
+- Barındırılan Supabase projesine connect-backend migration'ları uygulanmış olmalıdır (OSP-58 auth
+  şeması ve custom access token hook; bkz. `connect-backend/docs/supabase-settings.md`).
+- Her test kullanıcısının rolü olan, aktif bir `public.user_profiles` satırı olmalıdır.
+- Bunlar yoksa token'da `user_role` claim'i olmaz ve debug sahte backend'i, kurtarıcılar dahil her
+  kullanıcıya *"Bu hesap devre dışı"* yanıtı verir.
 
 ### Debug sahte backend ile geliştirme (yalnızca HTTPS)
 - **OSP-60 henüz yok.** Bu yüzden debug derlemeleri `FakeAuthBackend` kullanır:
@@ -196,17 +213,25 @@ Her commit'ten önce tam kontrol:
   derlemeleri loglar.
 
 ### Proje yapısı
-Ağaç, İngilizce bölümdekiyle aynıdır. Kısaca:
-- `config/`: `local.properties` → BuildConfig → yapılandırma.
-- `data/session/`: geçici DataStore deposu (OSP-75 değiştirecek) ve supabase-kt oturum adaptörü.
-- `data/device/`: kurulum UUID'si ve cihaz adı.
-- `data/network/`: tek HTTP yığını (Ktor + OkHttp).
-- `data/backend/`: OSP-60 istemcisi; DTO'lar ve `KtorAuthBackend`.
-- `data/supabase/`: Supabase Auth geçidi (gateway).
-- `auth/`: giriş/çıkış kullanım senaryoları, başlangıç kararı, hata modeli.
-- `ui/`: durum makinesi (ViewModel), giriş ve görev ekranları, ortak `SupplementaryDisclaimer`.
-- `src/debug`: sahte backend.
-- `src/androidTest`: cihaz üzerinde HTTPS-only kanıtı.
+```
+app/src/main/java/com/connect/mobile/
+  ConnectApplication.kt, AppContainer.kt   elle bağımlılık enjeksiyonu (DI framework yok)
+  MainActivity.kt                          tek activity, Compose
+  config/AppConfig.kt                      local.properties -> BuildConfig -> yapılandırma
+  data/session/                            SessionStore (geçici DataStore, TODO OSP-75) + supabase-kt oturum adaptörü
+  data/device/DeviceIdProvider.kt          kurulum UUID'si + cihaz adı
+  data/network/HttpClientFactory.kt        tek HTTP yığını (Ktor + OkHttp motoru)
+  data/backend/                            OSP-60 istemcisi: DTO'lar (alan adları), KtorAuthBackend
+  data/supabase/                           Supabase Auth geçidi (giriş, çıkış, yerel temizlik)
+  auth/                                    LoginUseCase, LogoutUseCase, SessionBootstrap, AuthError
+  ui/                                      RescuerAuthViewModel (durum makinesi), giriş + görev ekranları,
+                                           common/SupplementaryDisclaimer (tüm modlarda kullanılabilir)
+app/src/debug/     FakeAuthBackend + debug AuthBackendFactory     (release'de yok)
+app/src/release/   release AuthBackendFactory (her zaman gerçek backend)
+app/src/test/      JVM birim testleri    app/src/testDebug/  sahte backend testleri
+app/src/androidTest/CleartextPolicyTest.kt   cihaz üzerinde HTTPS-only kanıtı
+app/src/main/res/xml/network_security_config.xml   cleartextTrafficPermitted="false"
+```
 
 ### Belgeler
 - [docs/osp-74-design.md](docs/osp-74-design.md): bu hikâyenin tasarımı (sürümler, sözleşmeler, durum
