@@ -1,3 +1,41 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- NFR-SAFE-03 / AC-29 (SoW metni, değiştirmeyin) -->
+    <string name="supplementary_disclaimer">CONNECT yardımcı bir kanaldır ve kurtarmayı garanti etmez. Kayıt bulunmaması, arama çalışmalarını sonlandırmak için asla gerekçe olarak kullanılmamalıdır.</string>
+
+    <string name="loading">Yükleniyor…</string>
+
+    <string name="login_title">Saha Kurtarıcısı girişi</string>
+    <string name="login_email">E-posta</string>
+    <string name="login_password">Parola</string>
+    <string name="login_show_password">Göster</string>
+    <string name="login_hide_password">Gizle</string>
+    <string name="login_submit">Giriş yap</string>
+    <string name="login_online_note">Göreve çıkmadan önce çevrimiçi giriş gereklidir.</string>
+    <string name="login_logged_out">Oturumunuz kapatıldı.</string>
+    <string name="login_progress_signing_in">Giriş yapılıyor…</string>
+    <string name="login_progress_binding">Görev yetkisi doğrulanıyor…</string>
+    <string name="login_progress_tearing_down">Oturum temizleniyor…</string>
+
+    <string name="mission_title">Saha Kurtarıcısı Modu etkin</string>
+    <string name="mission_authenticated_until">Çevrimdışı görev için %1$s tarihine kadar yetkilendirildi</string>
+    <string name="mission_end_button">Görevi Bitir / Çıkış Yap</string>
+    <string name="mission_end_dialog_title">Görev bitirilsin mi?</string>
+    <string name="mission_end_dialog_text">Çevrimdışı erişim bir sonraki çevrimiçi girişe kadar sona erer. Bu cihazdaki senkronize edilmemiş kazazede kayıtları korunur.</string>
+    <string name="mission_end_dialog_cancel">İptal</string>
+    <string name="mission_logging_out">Çıkış yapılıyor…</string>
+
+    <string name="error_invalid_input">E-posta adresinizi ve parolanızı girin.</string>
+    <string name="error_bad_credentials">E-posta veya parola hatalı.</string>
+    <string name="error_account_disabled">Bu hesap devre dışı. Yöneticinizle iletişime geçin.</string>
+    <string name="error_account_not_ready">Bu hesap henüz etkinleştirilmedi. Yöneticinizle iletişime geçin.</string>
+    <string name="error_rate_limited">Çok fazla deneme yapıldı. Birkaç dakika bekleyip tekrar deneyin.</string>
+    <string name="error_network">Bağlantı yok. Saha Kurtarıcısı girişi göreve çıkmadan önce internet gerektirir.</string>
+    <string name="error_role_not_allowed">Saha Kurtarıcısı Modu yalnızca kurtarıcı hesapları içindir. Koordinatörler ve yöneticiler web panelini kullanmalıdır.</string>
+    <string name="error_session_rejected">Oturumunuz doğrulanamadı. Lütfen tekrar giriş yapın.</string>
+    <string name="error_device_revoked">Bu cihazın yetkisi kaldırıldı. Yöneticinizle iletişime geçin.</string>
+    <string name="error_request_rejected">Giriş isteği reddedildi. Uygulamayı güncelleyin veya koordinatörünüzle iletişime geçin.</string>
+    <string name="error_grant_invalid">Sunucu geçersiz bir görev yetkisi döndürdü. Tekrar deneyin veya koordinatörünüzle iletişime geçin.</string>
+    <string name="error_server">Sunucu hatası. Lütfen daha sonra tekrar deneyin.</string>
+    <string name="error_not_configured">Bu sürüm çevrimiçi giriş için yapılandırılmamış.</string>
 </resources>

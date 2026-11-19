@@ -3,6 +3,9 @@ package com.connect.mobile
 import android.content.Context
 import android.os.Build
 import androidx.datastore.preferences.preferencesDataStoreFile
+import com.connect.mobile.auth.LoginUseCase
+import com.connect.mobile.auth.LogoutUseCase
+import com.connect.mobile.auth.SessionBootstrap
 import com.connect.mobile.config.AppConfig
 import com.connect.mobile.data.backend.AuthBackend
 import com.connect.mobile.data.backend.AuthBackendFactory
@@ -14,6 +17,7 @@ import com.connect.mobile.data.session.StoreBackedSessionManager
 import com.connect.mobile.data.supabase.NotConfiguredAuthGateway
 import com.connect.mobile.data.supabase.SupabaseAuthGateway
 import com.connect.mobile.data.supabase.SupabaseKtAuthGateway
+import com.connect.mobile.ui.RescuerAuthViewModel
 import com.connect.mobile.util.AppLogger
 import com.connect.mobile.util.causeChainMessages
 import io.github.jan.supabase.auth.Auth
@@ -42,6 +46,21 @@ class AppContainer(context: Context) {
     val authBackend: AuthBackend by lazy { AuthBackendFactory.create(config, httpClient, log) }
 
     val authGateway: SupabaseAuthGateway by lazy { createGateway() }
+
+    private val logoutUseCase by lazy { LogoutUseCase(authGateway, authBackend, sessionStore) }
+
+    fun newRescuerAuthViewModel() = RescuerAuthViewModel(
+        login = LoginUseCase(
+            isConfigured = config.isConfigured,
+            gateway = authGateway,
+            backend = authBackend,
+            store = sessionStore,
+            deviceIdProvider = deviceIdProvider,
+            logout = logoutUseCase,
+        ),
+        logout = logoutUseCase,
+        bootstrap = SessionBootstrap(sessionStore, logoutUseCase),
+    )
 
     private fun createGateway(): SupabaseAuthGateway {
         val notConfigured = NotConfiguredAuthGateway(sessionStore::deleteSupabaseSession)
