@@ -15,12 +15,16 @@ import kotlinx.serialization.json.Json
 object HttpClientFactory {
     val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
 
-    fun create(engine: HttpClientEngine = OkHttp.create()): HttpClient = HttpClient(engine) {
+    /** [requestTimeoutMillis] is a parameter only so tests need not wait 15 s. */
+    fun create(
+        engine: HttpClientEngine = OkHttp.create(),
+        requestTimeoutMillis: Long = 15_000,
+    ): HttpClient = HttpClient(engine) {
         expectSuccess = false
         install(ContentNegotiation) { json(json) }
         install(HttpTimeout) {
             connectTimeoutMillis = 10_000
-            requestTimeoutMillis = 15_000
+            this.requestTimeoutMillis = requestTimeoutMillis
         }
     }
 }

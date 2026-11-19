@@ -26,7 +26,7 @@ import java.io.IOException
 import java.util.Base64
 
 class SupabaseKtAuthGateway(
-    private val auth: Auth,
+    internal val auth: Auth, // internal for tests only
     private val sessionManager: StoreBackedSessionManager,
     private val log: AppLogger = AppLogger.NONE,
     private val initTimeoutMs: Long = 5_000,

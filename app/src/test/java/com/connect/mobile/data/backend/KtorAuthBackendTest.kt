@@ -10,7 +10,10 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.headersOf
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
@@ -91,6 +94,16 @@ class KtorAuthBackendTest {
 
     @Test fun ioExceptionIsNetwork() = runTest {
         val r = backend { throw IOException("CLEARTEXT communication not permitted") }.bindSession("t", "d", "n")
+        assertEquals(BackendResult.Err(BackendError.Network), r)
+    }
+
+    /** R12: Ktor's HttpRequestTimeoutException (an IOException) maps to Network. Real time: MockEngine has its own dispatcher. */
+    @Test fun requestTimeoutIsNetwork() = runBlocking {
+        val slow = KtorAuthBackend(
+            HttpClientFactory.create(MockEngine { delay(10_000); respond("{}") }, requestTimeoutMillis = 100),
+            "https://api.example.test",
+        )
+        val r = withTimeout(5_000) { slow.bindSession("t", "d", "n") }
         assertEquals(BackendResult.Err(BackendError.Network), r)
     }
 
