@@ -165,6 +165,15 @@ data class StoredGrant(val userId: String, val deviceId: String, val role: Strin
   token read, sign-in or `clearSession()`. The timeout keeps offline logout from hanging.
 - **Auto-refresh:** keep the defaults (`alwaysAutoRefresh`, `enableLifecycleCallbacks`) and add
   `// TODO(OSP-75): suspend auto-refresh while offline`.
+- **Re-persist hardening (review R7).** supabase-kt's `sessionJob` is a plain `var`, so a refresh job
+  recreated concurrently with `clearSession()` could escape cancellation and save the tokens again
+  later.
+  - `clearLocalSession()` therefore calls `stopAutoRefreshForCurrentSession()` before **and** after
+    `auth.clearSession()`.
+  - `StoreBackedSessionManager` has a save gate. `clearLocalSession()` closes it and `signIn()`
+    re-opens it before `signInWith`, because supabase-kt saves the new session inside that call.
+    While the gate is closed, `saveSession` is a no-op. The gate is open at process start, so a
+    running mission keeps its refreshed tokens.
 
 ### 3.3 Device ID
 `DeviceIdProvider(store)`:
@@ -301,9 +310,9 @@ after up to ~15 s of remote calls, so a process death in that window kept offlin
    - On no network it throws `HttpRequestException` (an IOException) **before** clearing.
    - So it is never relied on for the wipe.
 4. **Always**, in `finally` inside `withContext(NonCancellable)`, every step unconditional:
-   - `gateway.awaitInitialized()`, then `gateway.clearLocalSession()`, which calls
-     `auth.clearSession()`. This stops auto-refresh, so the tokens cannot be saved again, and it
-     calls our `deleteSession()`.
+   - `gateway.awaitInitialized()`, then `gateway.clearLocalSession()`. It closes the save gate,
+     stops auto-refresh, calls `auth.clearSession()` (which calls our `deleteSession()`), and stops
+     auto-refresh again (section 3.2, R7). So the tokens cannot be saved again.
    - Then `store.clearAuth()`, which is the scoped removal of `{supabase_session, grant_*}`.
    - Each step catches `Throwable`, including a `CancellationException` thrown *by the callee*
      (review R9), so a failing or cancelling step can never skip `clearAuth()`.

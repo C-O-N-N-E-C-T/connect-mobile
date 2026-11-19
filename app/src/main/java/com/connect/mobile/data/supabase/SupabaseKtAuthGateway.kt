@@ -1,6 +1,7 @@
 package com.connect.mobile.data.supabase
 
 import com.connect.mobile.auth.AuthError
+import com.connect.mobile.data.session.StoreBackedSessionManager
 import com.connect.mobile.util.AppLogger
 import com.connect.mobile.util.causeChainMessages
 import io.github.jan.supabase.auth.Auth
@@ -14,6 +15,7 @@ import java.io.IOException
 
 class SupabaseKtAuthGateway(
     private val auth: Auth,
+    private val sessionManager: StoreBackedSessionManager,
     private val log: AppLogger = AppLogger.NONE,
     private val initTimeoutMs: Long = 5_000,
 ) : SupabaseAuthGateway {
@@ -24,6 +26,8 @@ class SupabaseKtAuthGateway(
 
     override suspend fun signIn(email: String, password: String): SignInOutcome {
         awaitInitialized()
+        // supabase-kt saves the new session inside signInWith, so re-open the save gate first.
+        sessionManager.allowSaves()
         return try {
             auth.signInWith(Email) {
                 this.email = email
@@ -59,7 +63,12 @@ class SupabaseKtAuthGateway(
     }
 
     override suspend fun clearLocalSession() {
+        // Review R7: close the save gate and stop auto-refresh on both sides of clearSession(), so a
+        // refresh job recreated concurrently cannot escape and re-persist the tokens.
+        sessionManager.blockSaves()
+        auth.stopAutoRefreshForCurrentSession()
         auth.clearSession()
+        auth.stopAutoRefreshForCurrentSession()
     }
 }
 

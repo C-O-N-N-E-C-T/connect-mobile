@@ -43,6 +43,18 @@ class StoreBackedSessionManagerTest {
         }
     }
 
+    @Test fun savesAreIgnoredAfterLogoutUntilNextSignIn() = runTest {
+        val h = TestStoreHandle(tmp.newFile("m.preferences_pb").also { it.delete() })
+        val m = StoreBackedSessionManager(h.store)
+        m.blockSaves()
+        m.saveSession(session) // e.g. a refresh job that escaped cancellation
+        assertNull(h.store.readSupabaseSession())
+        m.allowSaves()
+        m.saveSession(session)
+        assertNotNull(h.store.readSupabaseSession())
+        h.close()
+    }
+
     @Test fun deleteSessionKeepsGrantAndDeviceId() = runTest {
         val h = TestStoreHandle(tmp.newFile("m.preferences_pb").also { it.delete() })
         val id = h.store.getOrCreateDeviceId { "dev" }

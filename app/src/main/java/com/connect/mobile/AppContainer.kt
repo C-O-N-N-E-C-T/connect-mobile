@@ -65,6 +65,7 @@ class AppContainer(context: Context) {
     private fun createGateway(): SupabaseAuthGateway {
         val notConfigured = NotConfiguredAuthGateway(sessionStore::deleteSupabaseSession)
         if (!config.isSupabaseConfigured) return notConfigured
+        val sessionManager = StoreBackedSessionManager(sessionStore)
         return try {
             val client = createSupabaseClient(config.supabaseUrl, config.supabaseAnonKey) {
                 // Same OkHttp engine type as the backend client, so the Network Security Config covers it.
@@ -74,12 +75,12 @@ class AppContainer(context: Context) {
                 defaultLogLevel = LogLevel.NONE
                 install(Auth) {
                     // Tokens live only in SessionStore, not in plaintext SharedPreferences (design 3.2).
-                    sessionManager = StoreBackedSessionManager(sessionStore)
+                    this.sessionManager = sessionManager
                     codeVerifierCache = MemoryCodeVerifierCache()
                     // TODO(OSP-75): suspend auto-refresh while offline.
                 }
             }
-            SupabaseKtAuthGateway(client.auth, log)
+            SupabaseKtAuthGateway(client.auth, sessionManager, log)
         } catch (e: IllegalArgumentException) {
             log.debug("invalid Supabase config: ${e.causeChainMessages()}")
             notConfigured
