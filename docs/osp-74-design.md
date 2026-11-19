@@ -24,6 +24,14 @@ Seams are left for OSP-75 (encrypted storage), OSP-73 (grant policy and biometri
 8. Verification after **every** checkpoint is the full command
    `timeout 1500 ./gradlew assembleDebug assembleRelease testDebugUnitTest lintDebug assembleDebugAndroidTest`.
 
+Implementation notes (deviations found while coding, 2026-11-19):
+- `AppConfig.isConfigured` needs `API_BASE_URL` only when the debug fake backend is off; with the fake,
+  `SUPABASE_URL` + `SUPABASE_ANON_KEY` are enough (section 3.7 said all three).
+- A debug-only `AppLogger` (`adb logcat -s CONNECT`) logs the cause chain of network failures, so the
+  OS message "CLEARTEXT communication … not permitted" is visible (section 7, manual check 4). Tokens,
+  passwords, headers and bodies are never logged.
+- `AuthError` was added in 1.3 (the gateway maps Supabase errors to it), not 1.4.
+
 ## 1. Toolchain and library versions (verified 2026-11-19)
 
 Every version below was checked against the repository metadata. The full dependency set was also

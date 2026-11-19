@@ -82,6 +82,7 @@ class LoginUseCase(
     }
 
     companion object {
+        // OSP-60 ASSUMPTION: role is the lowercase public.user_profiles value ("rescuer" | "coordinator" | "administrator") — see docs/osp-60-contract-assumptions.md
         const val RESCUER_ROLE = "rescuer"
         val MAX_GRANT: Duration = Duration.ofHours(72).plusSeconds(60)
         private val EMAIL = Regex("^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$")
@@ -89,6 +90,7 @@ class LoginUseCase(
         /** Client-side sanity check only; expiry over time is OSP-73's OfflineGrantPolicy. */
         fun validateGrant(response: SessionResponse, ourDeviceId: String): StoredGrant? {
             val dto: OfflineMissionGrantDto = response.grant ?: return null
+            // OSP-60 ASSUMPTION: grant.user_id == response user_id, grant.device_id == the device_id we sent, 0 < expires_at - authenticated_at <= 72 h (+60 s tolerance) — see docs/osp-60-contract-assumptions.md
             if (dto.userId != response.userId || dto.deviceId != ourDeviceId) return null
             // OSP-60 ASSUMPTION: authenticated_at / expires_at are ISO-8601 with offset ("…Z" or "+00:00") — see docs/osp-60-contract-assumptions.md
             val authenticatedAt = runCatching { OffsetDateTime.parse(dto.authenticatedAt).toInstant() }.getOrNull()
