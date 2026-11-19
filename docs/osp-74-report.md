@@ -102,7 +102,7 @@ Manual constructor injection through one `AppContainer` (no DI framework: about 
 | OSP-60 (backend `/auth/session`, `/auth/logout`) | Not implemented yet; the app assumes a contract | Backend owner: read `docs/osp-60-contract-assumptions.md` (response format, grant key `offline_mission_grant`, ISO-8601 timestamps with offset, error codes, logout after role rejection) and confirm or correct it. List all code sites with `grep -rn "OSP-60 ASSUMPTION" app/src` |
 | OSP-75 (encrypted storage) | Replaces the temporary plaintext DataStore | Owner: implement `SessionStore` with Tink AEAD; no UI/login code should change |
 | OSP-73 (grant policy, biometrics) | Builds on the minimal expiry check | Add the monotonic-clock policy and biometric lock at the `TODO(OSP-73)` seam |
-| OSP-69 | Related card listed in the plan | No code dependency in this story; the shared `SupplementaryDisclaimer` is reusable by other modes |
+| OSP-69 | Web dashboard login page and the web `<SupplementaryDisclaimer />` component (NFR-SAFE-03) | No code dependency. The Android `SupplementaryDisclaimer` composable is the mobile counterpart; both should show the same NFR-SAFE-03 wording, so a wording change must be applied in both repos |
 | OSP-76 (reconnection) | Later story | Seams are prepared; not built |
 
 ### 6. Quality
@@ -279,7 +279,7 @@ Tek bir `AppContainer` üzerinden elle bağımlılık enjeksiyonu (DI framework 
 | OSP-60 (backend `/auth/session`, `/auth/logout`) | Henüz yok; uygulama bir sözleşme varsayıyor | Backend sahibi: `docs/osp-60-contract-assumptions.md` dosyasını okuyup (yanıt biçimi, grant anahtarı `offline_mission_grant`, ofsetli ISO-8601 zaman damgaları, hata kodları, rol reddinden sonra logout) onaylamalı veya düzeltmeli. Kod noktaları: `grep -rn "OSP-60 ASSUMPTION" app/src` |
 | OSP-75 (şifreli depolama) | Geçici düz metin DataStore'un yerini alır | Sahibi: `SessionStore`'u Tink AEAD ile uygulamalı; giriş/arayüz kodu değişmemeli |
 | OSP-73 (grant politikası, biyometri) | Asgari süre kontrolünün üzerine kurulur | `TODO(OSP-73)` noktasına monoton saat politikasını ve biyometrik kilidi eklemeli |
-| OSP-69 | Planda ilişkili kart | Bu hikâyede kod bağımlılığı yok; ortak `SupplementaryDisclaimer` diğer modlarda kullanılabilir |
+| OSP-69 | Web paneli giriş sayfası ve web `<SupplementaryDisclaimer />` bileşeni (NFR-SAFE-03) | Kod bağımlılığı yok. Android'deki `SupplementaryDisclaimer` composable'ı bunun mobil karşılığıdır; ikisi de aynı NFR-SAFE-03 metnini göstermeli, metin değişirse iki repoda birden güncellenmeli |
 | OSP-76 (yeniden bağlanma) | Sonraki hikâye | Bağlantı noktaları hazır; yapılmadı |
 
 ### 6. Kalite
