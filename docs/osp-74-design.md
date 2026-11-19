@@ -6,6 +6,24 @@ framework: about 10 objects, one module). No features beyond the story.
 Seams are left for OSP-75 (encrypted storage), OSP-73 (grant policy and biometric lock) and OSP-76
 (reconnection).
 
+## 0. Changes approved by the user (2026-11-19)
+1. Stay on compileSdk/targetSdk 37 (installed `android-37.0`), minSdk 26, Compose BOM 2026.09.00; no move to 37.1.
+2. Disclaimer text is the SoW NFR-SAFE-03 wording (section 5).
+3. OSP-60 (backend `/auth/session`, `/auth/logout`) is not started. Every code location that depends on
+   a contract assumption carries the greppable comment `// OSP-60 ASSUMPTION: <what> — see docs/osp-60-contract-assumptions.md`;
+   that file (EN + TR) is the handoff note for the backend developer (replaces section 8 items 1–4).
+4. Team rule: nobody installs Gradle or Kotlin system-wide. The Gradle 9.7.1 wrapper is committed with
+   `distributionSha256Sum` (official checksum); Kotlin only via the Gradle plugins / version catalog;
+   `kotlin { jvmToolchain(21) }`, no toolchain auto-provisioning plugin.
+5. README.md documents requirements, `./gradlew` only, the `local.properties` keys (never committed —
+   repos are public), build/test commands, the HTTPS-only rule and the debug fake backend.
+6. Debug testing = real hosted Supabase (URL/anon key in `local.properties`) + debug-only fake
+   `AuthBackend` for OSP-60. No fake Supabase sign-in. The fake is unreachable in release.
+7. Device tests run later on the user's own phone; here the instrumented cleartext test must only
+   compile (`assembleDebugAndroidTest`).
+8. Verification after **every** checkpoint is the full command
+   `timeout 1500 ./gradlew assembleDebug assembleRelease testDebugUnitTest lintDebug assembleDebugAndroidTest`.
+
 ## 1. Toolchain and library versions (verified 2026-11-19)
 
 Every version below was checked against the repository metadata. The full dependency set was also
@@ -40,7 +58,9 @@ No Robolectric (DataStore is tested on plain JVM with a temp file). Versions liv
 ```
 .gitignore                      # local.properties, .gradle/, build/, .idea/, *.iml, .kotlin/, captures/
 settings.gradle.kts  build.gradle.kts  gradle.properties  gradle/libs.versions.toml
-gradlew  gradlew.bat  gradle/wrapper/gradle-wrapper.{jar,properties}   # generated from cached 9.7.1
+gradlew  gradlew.bat  gradle/wrapper/gradle-wrapper.{jar,properties}   # 9.7.1 + distributionSha256Sum
+README.md                       # requirements, ./gradlew only, local.properties keys, HTTPS-only, fake backend
+docs/osp-60-contract-assumptions.md   # EN + TR handoff note for the OSP-60 backend developer
 app/build.gradle.kts            # reads local.properties -> BuildConfig (see section 3.7)
 app/src/main/AndroidManifest.xml   # INTERNET; networkSecurityConfig; allowBackup=false; dataExtractionRules
 app/src/main/res/xml/network_security_config.xml   # <base-config cleartextTrafficPermitted="false"/>, no domain exceptions
@@ -288,16 +308,20 @@ rule.
 - **SupplementaryDisclaimer:**
   - A stateless `@Composable fun SupplementaryDisclaimer(modifier: Modifier = Modifier)` with an
     info icon and the `R.string.supplementary_disclaimer` text.
-  - The EN and TR texts are exactly as given by the user.
+  - The EN and TR texts are exactly (SoW NFR-SAFE-03):
+    - EN: "CONNECT is a supplementary channel and does not guarantee rescue. The absence of records must never be used to terminate search operations."
+    - TR: "CONNECT yardımcı bir kanaldır ve kurtarmayı garanti etmez. Kayıt bulunmaması, arama çalışmalarını sonlandırmak için asla gerekçe olarak kullanılmamalıdır."
   - The composable is in `ui/common` so that other modes can reuse it.
 
 ## 6. Implementation checkpoints
 The first command runs from the repo root. Each later checkpoint must also keep the previous ones
-green.
+green. **Per section 0 item 8, every checkpoint is verified with the full command**
+`timeout 1500 ./gradlew assembleDebug assembleRelease testDebugUnitTest lintDebug assembleDebugAndroidTest`
+(1.6 adds `testReleaseUnitTest`); the column below lists what each checkpoint adds.
 
 | # | Content | Verification |
 |---|---|---|
-| 1.1 | `.gitignore`, wrapper (`timeout 600 ~/.gradle/wrapper/dists/gradle-9.7.1-bin/*/gradle-9.7.1/bin/gradle wrapper --gradle-version 9.7.1`), version catalog, `app` module, empty Compose `MainActivity`, manifest, `network_security_config.xml`, `data_extraction_rules.xml`, BuildConfig fields | `timeout 1500 ./gradlew assembleDebug assembleRelease lintDebug` and `git check-ignore local.properties` |
+| 1.1 | `.gitignore`, wrapper (`gradle wrapper --gradle-version 9.7.1 --gradle-distribution-sha256-sum <official sha256>` run with the cached 9.7.1 binary), version catalog, `app` module, empty Compose `MainActivity`, manifest, `network_security_config.xml`, `data_extraction_rules.xml`, BuildConfig fields | `timeout 1500 ./gradlew assembleDebug assembleRelease lintDebug` and `git check-ignore local.properties` |
 | 1.2 | `SessionStore`, `DataStoreSessionStore`, `StoreBackedSessionManager`, `DeviceIdProvider` and their tests | `timeout 1500 ./gradlew testDebugUnitTest` |
 | 1.3 | `HttpClientFactory`, DTOs, `AuthBackend`, `KtorAuthBackend`, debug `FakeAuthBackend` and factories (debug and release), `SupabaseAuthGateway` and its supabase-kt impl, `AppContainer` | `timeout 1500 ./gradlew testDebugUnitTest assembleRelease` |
 | 1.4 | `AuthError`, `LoginUseCase`, `LogoutUseCase`, `SessionBootstrap`, `RescuerAuthViewModel` | `timeout 1500 ./gradlew testDebugUnitTest` |
@@ -359,6 +383,10 @@ Commit after each checkpoint (`OSP-74: …`), staging explicit paths only (never
 - No `debug-overrides` or domain exceptions are added.
 
 ## 8. Open questions and assumptions
+Items 1–4 are now tracked in `docs/osp-60-contract-assumptions.md` and at each code site by the
+`// OSP-60 ASSUMPTION:` comment. Items 5–7 were decided by the user on 2026-11-19 (section 0):
+5 = stay on 37 / BOM 2026.09.00, 6 = no fake Supabase sign-in, 7 = tests on the user's phone later.
+
 1. **Grant JSON key**: the assumed name is `offline_mission_grant` (the `GRANT_JSON_KEY` constant in
    `AuthDtos.kt`). Confirm with the OSP-60 backend owner.
 2. **Timestamp format**: ISO-8601 with an offset (`2026-11-19T18:00:00+00:00` or `…Z`) is assumed
