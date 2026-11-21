@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- NFR-SEC-02: HTTPS only. No domain exceptions and no debug-overrides, also not for debug builds.
+     Use an HTTPS tunnel or the debug fake backend for local development (see README). -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+</network-security-config>
