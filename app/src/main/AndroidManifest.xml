@@ -3,6 +3,8 @@
     xmlns:tools="http://schemas.android.com/tools">
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- OSP-75: çevrimiçi/çevrimdışı takibi (NetworkCallback); çevrimdışıyken token yenileme durdurulur. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
     <application
         android:name=".ConnectApplication"

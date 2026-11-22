@@ -11,12 +11,22 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.SignOutScope
 import io.github.jan.supabase.auth.exception.AuthRestException
 import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.auth.status.SessionStatus
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.exceptions.RestException
 import io.github.jan.supabase.logging.LogLevel
 import io.ktor.client.engine.HttpClientEngine
 import io.ktor.client.engine.okhttp.OkHttp
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonPrimitive
@@ -30,10 +40,100 @@ class SupabaseKtAuthGateway(
     private val sessionManager: StoreBackedSessionManager,
     private val log: AppLogger = AppLogger.NONE,
     private val initTimeoutMs: Long = 5_000,
-) : SupabaseAuthGateway {
+    // OSP-75: ilk yüklemede yenilemenin hemen açılıp açılmayacağı (çevrimiçi + ön plan).
+    private val autoRefreshAllowed: () -> Boolean = { true },
+    loadScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+) : SupabaseAuthGateway, AutoRefreshTarget {
+
+    /**
+     * OSP-75: supabase-kt'nin kendi otomatik yüklemesi kapalıdır (`autoLoadFromStorage = false`); saklı
+     * oturumu burada, yenilemeyi o anki ağ/ön plan durumuna göre açarak yükleriz. Böylece çevrimdışı
+     * oluşturulan istemci süresi geçmiş token için ~10 sn'lik başarısız yenileme döngüsüne girmez.
+     * Ayrıca `enableLifecycleCallbacks = false` iken supabase-kt durumu yükleme bitmeden
+     * NotAuthenticated yapabildiği için [awaitInitialized] supabase-kt'yi değil bu yüklemeyi bekler.
+     */
+    /** D4: ilk (veya sonraki) yükleme depo hatasıyla başarısız oldu; bir sonraki resume tekrar dener. */
+    private val loadRetryNeeded = MutableStateFlow(false)
+
+    private val initialLoad: Deferred<Unit> = loadScope.async {
+        try {
+            auth.loadFromStorage(autoRefresh = autoRefreshAllowed())
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // Okunamayan depo: oturum yok sayılır (supabase-kt'nin kendi yüklemesiyle aynı davranış).
+            log.debug("supabase session load failed: ${e.javaClass.simpleName}")
+        }
+        loadRetryNeeded.value = sessionManager.lastLoadFailed
+        // O3: yükleme sürerken ağ düşmüş / arka plana geçilmiş olabilir. Karar yeniden okunur; artık
+        // izin yoksa yüklemenin başlattığı yenileme durdurulur (aksi halde çevrimdışı döngü başlardı).
+        if (!autoRefreshAllowed()) auth.stopAutoRefreshForCurrentSession()
+    }
 
     override suspend fun awaitInitialized() {
-        withTimeoutOrNull(initTimeoutMs) { auth.awaitInitialization() }
+        withTimeoutOrNull(initTimeoutMs) {
+            initialLoad.await()
+            auth.awaitInitialization()
+        }
+    }
+
+    /**
+     * Yenilenebilir oturum var mı. Başarısız bir yükleme de "var" sayılır (D4): denetleyici çevrimiçi
+     * + ön planda resume çağırsın ve [resumeAutoRefresh] yüklemeyi yeniden denesin.
+     */
+    override val hasSession: Flow<Boolean> = combine(auth.sessionStatus, loadRetryNeeded) { status, retry ->
+        status is SessionStatus.Authenticated || status is SessionStatus.RefreshFailure || retry
+    }.distinctUntilChanged()
+
+    override suspend fun resumeAutoRefresh() {
+        awaitInitialized()
+        // Logout sonrası (kayıt kapısı kapalı) depoda oturum yoktur; yeniden yükleme denenmez.
+        if (sessionManager.savesBlocked) return
+        val status = auth.sessionStatus.value
+        if (loadRetryNeeded.value && status !is SessionStatus.Authenticated && status !is SessionStatus.RefreshFailure) {
+            reloadWithAutoRefresh()
+            return
+        }
+        when (status) {
+            is SessionStatus.Authenticated -> {
+                if (auth.isAutoRefreshRunning) return
+                try {
+                    auth.startAutoRefreshForCurrentSession()
+                } catch (e: IllegalStateException) {
+                    // Tuzak: start, durum kontrolümüzden sonra değişirse "No session found" (ISE) veya
+                    // Authenticated'a zorla dönüşüm (ClassCastException) atar. Depodan yeniden yükle.
+                    reloadWithAutoRefresh()
+                } catch (e: ClassCastException) {
+                    reloadWithAutoRefresh()
+                }
+            }
+            // Çevrimdışı yenileme başarısız oldu: supabase-kt oturumu "current" saymaz, start ISE atardı.
+            // Depodaki oturum yeniden içe aktarılır; süresi geçmişse hemen yenilenir.
+            is SessionStatus.RefreshFailure -> reloadWithAutoRefresh()
+            // Oturum yok (veya hâlâ yükleniyor): yenileme başlatılmaz.
+            else -> Unit
+        }
+    }
+
+    override fun pauseAutoRefresh() {
+        auth.stopAutoRefreshForCurrentSession()
+    }
+
+    /**
+     * O1: logout ile yarış. Kontrol ile yükleme arasında veya yükleme sürerken [clearLocalSession]
+     * çalışabilir; o durumda yükleme oturumu belleğe geri getirebilirdi. Kapı yüklemeden önce ve
+     * sonra yeniden kontrol edilir; kapalıysa yüklenen oturum hemen silinir ve yenileme durdurulur.
+     */
+    private suspend fun reloadWithAutoRefresh() {
+        if (sessionManager.savesBlocked) return
+        auth.loadFromStorage(autoRefresh = true)
+        loadRetryNeeded.value = sessionManager.lastLoadFailed
+        if (sessionManager.savesBlocked) {
+            loadRetryNeeded.value = false
+            auth.stopAutoRefreshForCurrentSession()
+            auth.clearSession()
+            auth.stopAutoRefreshForCurrentSession()
+        }
     }
 
     override suspend fun signIn(email: String, password: String): SignInOutcome {
@@ -86,6 +186,8 @@ class SupabaseKtAuthGateway(
         // Review R7: close the save gate and stop auto-refresh on both sides of clearSession(), so a
         // refresh job recreated concurrently cannot escape and re-persist the tokens.
         sessionManager.blockSaves()
+        // OSP-75: logout sonrası yükleme tekrarı yok (hasSession false olur).
+        loadRetryNeeded.value = false
         auth.stopAutoRefreshForCurrentSession()
         auth.clearSession()
         auth.stopAutoRefreshForCurrentSession()
@@ -103,8 +205,8 @@ class SupabaseKtAuthGateway(
             store: SessionStore,
             log: AppLogger = AppLogger.NONE,
             engine: HttpClientEngine = OkHttp.create(),
-            enableLifecycleCallbacks: Boolean = true,
             initTimeoutMs: Long = 5_000,
+            autoRefreshAllowed: () -> Boolean = { true },
         ): SupabaseKtAuthGateway? = try {
             val sessionManager = StoreBackedSessionManager(store)
             val client = createSupabaseClient(supabaseUrl, supabaseAnonKey) {
@@ -117,11 +219,17 @@ class SupabaseKtAuthGateway(
                     // Tokens live only in SessionStore, not in plaintext SharedPreferences (design 3.2).
                     this.sessionManager = sessionManager
                     codeVerifierCache = MemoryCodeVerifierCache()
-                    this.enableLifecycleCallbacks = enableLifecycleCallbacks
-                    // TODO(OSP-75): suspend auto-refresh while offline.
+                    // OSP-75: yenileme AutoRefreshController'a ait (çevrimiçi + ön plan + oturum).
+                    // supabase-kt'nin yaşam döngüsü geri çağrıları ağı bilmez; kapalı.
+                    this.enableLifecycleCallbacks = false
+                    // Oturum varken yenileme varsayılan olarak açık kalır (giriş anında çevrimiçiyiz);
+                    // durdurma/sürdürme kararını denetleyici verir.
+                    alwaysAutoRefresh = true
+                    // Saklı oturumu gateway kendisi yükler (bkz. SupabaseKtAuthGateway.initialLoad).
+                    autoLoadFromStorage = false
                 }
             }
-            SupabaseKtAuthGateway(client.auth, sessionManager, log, initTimeoutMs)
+            SupabaseKtAuthGateway(client.auth, sessionManager, log, initTimeoutMs, autoRefreshAllowed)
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

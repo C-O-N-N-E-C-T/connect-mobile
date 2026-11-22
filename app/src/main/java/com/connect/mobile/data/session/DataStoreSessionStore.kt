@@ -18,9 +18,12 @@ import java.io.File
 import java.time.Instant
 
 /**
- * TEMPORARY plaintext store (app-private DataStore file `connect_session.preferences_pb`).
+ * Herhangi bir `DataStore<Preferences>` üzerinde çalışan [SessionStore] mantığı.
  *
- * TODO(OSP-75): replace with Tink AEAD encrypted store.
+ * OSP-75: uygulama bu sınıfı şifreli DataStore ile kullanır ([EncryptedSessionStore],
+ * `connect_session.enc`). [create] ile kurulan düz metin sürüm (`connect_session.preferences_pb`)
+ * yalnızca testlerde ve eski dosyanın biçimini tanımlamak için kalır; eski dosya ilk açılışta
+ * [LegacyPlaintextSessionMigration] ile taşınıp silinir.
  *
  * It only knows its own keys; it has no reference to any victim/relay data, so [clearAuth] cannot
  * touch unsynced victim records.

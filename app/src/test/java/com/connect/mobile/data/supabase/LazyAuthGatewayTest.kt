@@ -28,7 +28,6 @@ class LazyAuthGatewayTest {
             supabaseUrl = "https://example.supabase.co/auth/v1",
             supabaseAnonKey = "test-anon-key",
             store = InMemorySessionStore(),
-            enableLifecycleCallbacks = false,
         )
         assertNull(gateway)
         // Control: the same call with a plain project URL works in a JVM unit test.
@@ -37,7 +36,6 @@ class LazyAuthGatewayTest {
                 supabaseUrl = "https://example.supabase.co",
                 supabaseAnonKey = "test-anon-key",
                 store = InMemorySessionStore(),
-                enableLifecycleCallbacks = false,
             ),
         )
     }
