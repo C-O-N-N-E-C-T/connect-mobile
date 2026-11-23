@@ -21,6 +21,8 @@ fun javaString(value: String): String =
 android {
     namespace = "com.connect.mobile"
     compileSdk = 37
+    // OSP-75: build-tools sürümü sabitlenir (ortam kurulumuyla aynı: 37.0.0).
+    buildToolsVersion = "37.0.0"
 
     defaultConfig {
         applicationId = "com.connect.mobile"
@@ -72,6 +74,8 @@ dependencies {
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
     implementation(libs.androidx.lifecycle.runtime.compose)
+    // OSP-75: ProcessLifecycleOwner ile ön/arka plan takibi (auto-refresh denetimi).
+    implementation(libs.androidx.lifecycle.process)
     implementation(libs.androidx.datastore.preferences)
 
     implementation(platform(libs.compose.bom))
@@ -84,6 +88,8 @@ dependencies {
     implementation(libs.ktor.client.content.negotiation)
     implementation(libs.ktor.serialization.kotlinx.json)
     implementation(libs.kotlinx.serialization.json)
+    // OSP-75: Keystore ana anahtarı ile AEAD (şifreli oturum deposu + DB anahtarı sarma).
+    implementation(libs.tink.android)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
@@ -91,4 +97,7 @@ dependencies {
 
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    // OSP-75: SQLCipher yalnızca cihaz testinde (DB başlığı şifreli mi?); uygulamaya Room/E8 ile girecek.
+    androidTestImplementation(libs.sqlcipher.android)
+    androidTestImplementation(libs.androidx.sqlite)
 }

@@ -27,8 +27,22 @@ Only the **Field Rescuer pre-deployment login** exists so far.
 All traffic is **HTTPS only**: the Network Security Config sets `cleartextTrafficPermitted="false"`
 with no exceptions, also in debug builds.
 
+**Local data protection (OSP-75):**
+- The session, the 72-hour mission grant and the device ID are kept in
+  `files/datastore/connect_session.enc`: a DataStore whose whole file is encrypted with a
+  non-exportable AES-256-GCM key in the Android Keystore (Tink 1.24.0, `AndroidKeystore`).
+  EncryptedSharedPreferences is not used. If the Keystore is not available, the app does not fall
+  back to plaintext (fail-closed).
+- The plaintext `connect_session.preferences_pb` file of OSP-74 is moved into the encrypted store on
+  first launch and then deleted.
+- For the local database (E8, Room + SQLCipher), a random 32-byte key is kept in
+  `no_backup/connect_db_key.enc`, wrapped by a separate Keystore key. Logout, a 403 or account
+  closure does not delete this file. If it cannot be opened, no new key is created (an error is
+  returned).
+- Token refresh runs only when the device is online, the app is in the foreground and a session
+  exists. Offline it stops, and the session is not deleted (`ACCESS_NETWORK_STATE` permission).
+
 Not built yet (other stories):
-- encrypted storage (OSP-75; the current store is a temporary plaintext DataStore);
 - the full grant expiry policy (monotonic clock) and the biometric lock (OSP-73);
 - reconnection (OSP-76);
 - the backend endpoints themselves (OSP-60).
@@ -98,11 +112,13 @@ app/src/main/java/com/connect/mobile/
   ConnectApplication.kt, AppContainer.kt   manual dependency injection (no DI framework)
   MainActivity.kt                          single activity, Compose
   config/AppConfig.kt                      local.properties -> BuildConfig -> config
-  data/session/                            SessionStore (temporary DataStore, TODO OSP-75) + supabase-kt session adapter
+  data/session/                            SessionStore (Tink-encrypted DataStore) + supabase-kt session adapter
+  data/crypto/                             Android Keystore master key (Tink AEAD)
+  data/db/DbKeyProvider.kt                 SQLCipher key, wrapped by Keystore
   data/device/DeviceIdProvider.kt          install UUID + device name
-  data/network/HttpClientFactory.kt        the only HTTP stack (Ktor + OkHttp engine)
+  data/network/HttpClientFactory.kt        the only HTTP stack (Ktor + OkHttp engine); NetworkMonitor
   data/backend/                            OSP-60 client: DTOs (wire names), KtorAuthBackend
-  data/supabase/                           Supabase Auth gateway (sign-in, sign-out, local clear)
+  data/supabase/                           Supabase Auth gateway (sign-in, sign-out, local clear), AutoRefreshController
   auth/                                    LoginUseCase, LogoutUseCase, SessionBootstrap, AuthError
   ui/                                      RescuerAuthViewModel (state machine), login + mission screens,
                                            common/SupplementaryDisclaimer (reusable by all modes)
@@ -143,8 +159,20 @@ Tüm trafik **yalnızca HTTPS** üzerinden gider: Network Security Config
 `cleartextTrafficPermitted="false"` olarak ayarlıdır, hiçbir istisna yoktur; debug derlemede de
 böyledir.
 
+**Yerel veri koruması (OSP-75):**
+- Oturum, 72 saatlik görev izni ve cihaz kimliği `files/datastore/connect_session.enc` dosyasında
+  tutulur: Android Keystore'daki dışarı çıkarılamayan AES-256-GCM anahtarıyla (Tink 1.24.0,
+  `AndroidKeystore`) dosyanın tamamı şifrelenmiş bir DataStore. EncryptedSharedPreferences
+  kullanılmaz; Keystore kullanılamazsa düz metne düşülmez (fail-closed).
+- OSP-74'ün düz metin `connect_session.preferences_pb` dosyası ilk açılışta şifreli depoya taşınır
+  ve silinir.
+- Yerel veritabanı (E8, Room + SQLCipher) için 32 baytlık rastgele anahtar, ayrı bir Keystore
+  anahtarıyla sarılı olarak `no_backup/connect_db_key.enc` dosyasında tutulur. Çıkış, 403 veya
+  hesap kapatma bu dosyayı silmez; dosya açılamazsa yeni anahtar üretilmez (hata verilir).
+- Token yenileme yalnızca cihaz çevrimiçiyken, uygulama ön plandayken ve oturum varken çalışır.
+  Çevrimdışıyken durur ve oturum silinmez (`ACCESS_NETWORK_STATE` izni).
+
 Henüz yapılmayanlar (başka hikâyeler):
-- şifreli depolama (OSP-75; şu anki depo geçici, düz metin bir DataStore'dur);
 - grant süresinin tam politikası (monoton saat) ve biyometrik kilit (OSP-73);
 - yeniden bağlanma (OSP-76);
 - backend uç noktalarının kendisi (OSP-60).
@@ -220,11 +248,13 @@ app/src/main/java/com/connect/mobile/
   ConnectApplication.kt, AppContainer.kt   elle bağımlılık enjeksiyonu (DI framework yok)
   MainActivity.kt                          tek activity, Compose
   config/AppConfig.kt                      local.properties -> BuildConfig -> yapılandırma
-  data/session/                            SessionStore (geçici DataStore, TODO OSP-75) + supabase-kt oturum adaptörü
+  data/session/                            SessionStore (Tink ile şifreli DataStore) + supabase-kt oturum adaptörü
+  data/crypto/                             Android Keystore ana anahtarı (Tink AEAD)
+  data/db/DbKeyProvider.kt                 Keystore ile sarılmış SQLCipher anahtarı
   data/device/DeviceIdProvider.kt          kurulum UUID'si + cihaz adı
-  data/network/HttpClientFactory.kt        tek HTTP yığını (Ktor + OkHttp motoru)
+  data/network/HttpClientFactory.kt        tek HTTP yığını (Ktor + OkHttp motoru); NetworkMonitor
   data/backend/                            OSP-60 istemcisi: DTO'lar (alan adları), KtorAuthBackend
-  data/supabase/                           Supabase Auth geçidi (giriş, çıkış, yerel temizlik)
+  data/supabase/                           Supabase Auth geçidi (giriş, çıkış, yerel temizlik), AutoRefreshController
   auth/                                    LoginUseCase, LogoutUseCase, SessionBootstrap, AuthError
   ui/                                      RescuerAuthViewModel (durum makinesi), giriş + görev ekranları,
                                            common/SupplementaryDisclaimer (tüm modlarda kullanılabilir)

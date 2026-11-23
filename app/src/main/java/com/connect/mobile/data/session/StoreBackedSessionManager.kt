@@ -15,8 +15,11 @@ import kotlinx.serialization.json.Json
  * tokens. Saves are allowed at process start, so a running mission keeps its refreshed tokens.
  */
 class StoreBackedSessionManager(private val store: SessionStore) : SessionManager {
+    // OSP-75: yalnızca okuma için dışarı açıldı (yenileme denetleyicisi logout sonrası oturumu
+    // depodan yeniden yüklemeye çalışmasın); kapı mantığı değişmedi.
     @Volatile
-    private var savesBlocked = false
+    var savesBlocked = false
+        private set
 
     fun blockSaves() {
         savesBlocked = true
@@ -39,8 +42,24 @@ class StoreBackedSessionManager(private val store: SessionStore) : SessionManage
         }
     }
 
+    // OSP-75: son yüklemenin depo hatasıyla (ör. Keystore geçici hatası) başarısız olup olmadığı.
+    // supabase-kt loadFromStorage bu hatayı yutup "oturum yok" gibi davrandığı için gateway yeniden
+    // denemeye buradan karar verir. Davranış değişmez: hata yine yukarı atılır.
+    @Volatile
+    var lastLoadFailed = false
+        private set
+
     override suspend fun loadSession(): UserSession {
-        val raw = store.readSupabaseSession() ?: throw NoSessionFoundException()
+        val raw = try {
+            store.readSupabaseSession()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            lastLoadFailed = true
+            throw e
+        }
+        lastLoadFailed = false
+        if (raw == null) throw NoSessionFoundException()
         return json.decodeFromString(UserSession.serializer(), raw)
     }
 
