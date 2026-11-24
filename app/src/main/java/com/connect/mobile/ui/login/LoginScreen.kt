@@ -91,6 +91,10 @@ fun LoginScreen(
         if (idle?.loggedOut == true && idle.error == null) {
             Text(stringResource(R.string.login_logged_out), color = MaterialTheme.colorScheme.primary)
         }
+        // OSP-76: queued records are kept on the device and upload after this sign-in.
+        if (idle != null && idle.pendingUploads > 0) {
+            Text(stringResource(R.string.sync_pending_after_sign_in, idle.pendingUploads))
+        }
 
         Button(onClick = onSubmit, enabled = !busy, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.login_submit))
