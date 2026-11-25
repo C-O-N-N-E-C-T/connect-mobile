@@ -3,17 +3,25 @@ package com.connect.mobile
 import android.content.Context
 import android.os.Build
 import androidx.datastore.dataStoreFile
+import androidx.lifecycle.DefaultLifecycleObserver
 import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.ProcessLifecycleOwner
 import com.connect.mobile.auth.LoginUseCase
 import com.connect.mobile.auth.LogoutUseCase
 import com.connect.mobile.auth.SessionBootstrap
+import com.connect.mobile.auth.grant.AndroidMonotonicClock
+import com.connect.mobile.auth.grant.AppLockState
+import com.connect.mobile.auth.grant.GrantAnchorStore
+import com.connect.mobile.auth.grant.OfflineGrantChecker
+import com.connect.mobile.auth.grant.OfflineGrantPolicy
 import com.connect.mobile.config.AppConfig
 import com.connect.mobile.data.backend.AuthBackend
 import com.connect.mobile.data.backend.AuthBackendFactory
 import com.connect.mobile.data.crypto.AndroidKeystoreMasterKey
 import com.connect.mobile.data.db.DbKeyProvider
 import com.connect.mobile.data.device.DeviceIdProvider
+import com.connect.mobile.data.grant.DataStoreGrantAnchorStore
 import com.connect.mobile.data.network.HttpClientFactory
 import com.connect.mobile.data.network.NetworkMonitor
 import com.connect.mobile.data.session.AeadSupplier
@@ -34,6 +42,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import java.io.File
+import java.time.Clock
 
 /** Manual dependency injection (about ten objects, one module: no DI framework). */
 class AppContainer(context: Context) {
@@ -76,10 +85,39 @@ class AppContainer(context: Context) {
         .map { it.isAtLeast(Lifecycle.State.STARTED) }
         .stateIn(appScope, SharingStarted.Eagerly, processLifecycle.currentState.isAtLeast(Lifecycle.State.STARTED))
 
+    // OSP-73: monoton saat (elapsedRealtime + BOOT_COUNT).
+    private val monotonicClock = AndroidMonotonicClock(appContext.contentResolver)
+
+    // OSP-73: süreç başında kilitli; >15 dk arka plan sonrası yeniden kilitlenir. Gözlemci ana iş
+    // parçacığında senkron çağrılır, böylece kilit ilk kare çizilmeden önce devreye girer.
+    val appLock = AppLockState(monotonicClock).also { lock ->
+        processLifecycle.addObserver(object : DefaultLifecycleObserver {
+            override fun onStart(owner: LifecycleOwner) = lock.onForeground()
+            override fun onStop(owner: LifecycleOwner) = lock.onBackground()
+        })
+    }
+
+    // OSP-73: grant çapası ayrı şifreli dosyada (files/datastore/connect_grant_anchor.enc). Oturum
+    // ana anahtarı paylaşılır ama associated data farklıdır; discardKey burada no-op (anahtarın
+    // yaşam döngüsünü oturum deposu yönetir).
+    private val grantAnchorStore: GrantAnchorStore = DataStoreGrantAnchorStore.create(
+        produceFile = { appContext.dataStoreFile(DataStoreGrantAnchorStore.FILE_NAME) },
+        aeadSupplier = { AndroidKeystoreMasterKey(AndroidKeystoreMasterKey.SESSION_ALIAS).getOrCreateAead() },
+    )
+
     private val autoRefreshController = AutoRefreshController(networkMonitor.isOnline, isForeground)
         .also { it.start(appScope) }
 
     val deviceIdProvider = DeviceIdProvider(sessionStore) { "${Build.MANUFACTURER} ${Build.MODEL}" }
+
+    // OSP-73: policy + gerçek saatler + çapa deposu.
+    private val grantChecker = OfflineGrantChecker(
+        policy = OfflineGrantPolicy(),
+        anchors = grantAnchorStore,
+        deviceIdProvider = deviceIdProvider,
+        wallClock = Clock.systemUTC(),
+        monotonic = monotonicClock,
+    )
 
     private val httpClient by lazy { HttpClientFactory.create() }
 
@@ -88,7 +126,9 @@ class AppContainer(context: Context) {
     // Lazy delegate: the SupabaseClient is built on first use, not when the ViewModel is created (R8).
     val authGateway: SupabaseAuthGateway = LazyAuthGateway { createGateway() }
 
-    private val logoutUseCase by lazy { LogoutUseCase(authGateway, authBackend, sessionStore) }
+    private val logoutUseCase by lazy {
+        LogoutUseCase(authGateway, authBackend, sessionStore, grantAnchors = grantAnchorStore)
+    }
 
     fun newRescuerAuthViewModel() = RescuerAuthViewModel(
         login = LoginUseCase(
@@ -101,6 +141,8 @@ class AppContainer(context: Context) {
         ),
         logout = logoutUseCase,
         bootstrap = SessionBootstrap(sessionStore, deviceIdProvider, logoutUseCase),
+        grantChecker = grantChecker,
+        appLock = appLock,
     )
 
     /**

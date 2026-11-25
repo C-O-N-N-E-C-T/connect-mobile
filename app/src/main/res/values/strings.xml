@@ -21,12 +21,24 @@
 
     <string name="mission_title">Field Rescuer Mode active</string>
     <string name="mission_authenticated_until">Authenticated for offline deployment until %1$s</string>
-    <string name="mission_expired">Offline deployment authorization has expired. Connect to the internet and log in again.</string>
+    <!-- OSP-73: shown when OfflineGrantPolicy reports the offline window is over. -->
+    <string name="mission_reauth_title">Online Re-Authentication Required</string>
+    <string name="mission_expired">The offline deployment window has ended. Victim records on this device are kept and relay keeps running. Victim details and cloud sync stay locked until you log in online again.</string>
     <string name="mission_end_button">End Mission / Log Out</string>
     <string name="mission_end_dialog_title">End mission?</string>
     <string name="mission_end_dialog_text">Offline access ends until your next online login. Unsynced victim records on this device are kept.</string>
     <string name="mission_end_dialog_cancel">Cancel</string>
     <string name="mission_logging_out">Logging out…</string>
+
+    <!-- OSP-73: lost-phone protection (BiometricPrompt). -->
+    <string name="lock_title">Field Rescuer Mode is locked</string>
+    <string name="lock_text">Confirm it is you with your fingerprint or device screen lock to continue.</string>
+    <string name="lock_unlock_button">Unlock</string>
+    <string name="lock_prompt_title">Unlock Field Rescuer Mode</string>
+    <string name="lock_prompt_subtitle">Use your fingerprint or device PIN, pattern or password</string>
+    <string name="lock_no_credential">Set up a screen lock (PIN, pattern, password or fingerprint) on this device to use Field Rescuer Mode.</string>
+    <string name="lock_open_settings">Open security settings</string>
+    <string name="lock_unavailable">Unlock is not available right now. Try again in a moment.</string>
 
     <string name="error_invalid_input">Enter your e-mail and password.</string>
     <string name="error_bad_credentials">Incorrect e-mail or password.</string>

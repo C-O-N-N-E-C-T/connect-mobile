@@ -19,6 +19,7 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.connect.mobile.R
 import com.connect.mobile.ui.common.SupplementaryDisclaimer
+import com.connect.mobile.ui.lock.BiometricGate
 import com.connect.mobile.ui.login.LoginScreen
 import com.connect.mobile.ui.mission.MissionScreen
 
@@ -26,6 +27,7 @@ import com.connect.mobile.ui.mission.MissionScreen
 fun RescuerAuthRoute(viewModel: RescuerAuthViewModel) {
     val state by viewModel.state.collectAsStateWithLifecycle()
     val form by viewModel.form.collectAsStateWithLifecycle()
+    val locked by viewModel.locked.collectAsStateWithLifecycle()
 
     Scaffold { padding ->
         // imePadding: the keyboard must not cover the password field or the Sign in button.
@@ -33,12 +35,17 @@ fun RescuerAuthRoute(viewModel: RescuerAuthViewModel) {
         when (val s = state) {
             AuthUiState.Bootstrapping -> Busy(R.string.loading, modifier)
             AuthUiState.LoggingOut -> Busy(R.string.mission_logging_out, modifier)
-            is AuthUiState.MissionActive -> MissionScreen(
-                grant = s.grant,
-                expired = s.expired,
-                onEndMission = viewModel::endMission,
-                modifier = modifier,
-            )
+            // OSP-73: Field Rescuer Mode only after biometric / device credential (restart, >15 min background).
+            is AuthUiState.MissionActive -> if (locked) {
+                BiometricGate(onUnlocked = viewModel::onUnlocked, modifier = modifier)
+            } else {
+                MissionScreen(
+                    grant = s.grant,
+                    expired = s.expired,
+                    onEndMission = viewModel::endMission,
+                    modifier = modifier,
+                )
+            }
             else -> LoginScreen(
                 state = s,
                 form = form,

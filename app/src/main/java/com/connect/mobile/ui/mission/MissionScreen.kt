@@ -25,7 +25,10 @@ import com.connect.mobile.data.session.StoredGrant
 import com.connect.mobile.ui.common.ExpiryFormatter
 import com.connect.mobile.ui.common.SupplementaryDisclaimer
 
-// TODO(OSP-73): OfflineGrantPolicy gate (monotonic clock) + BiometricPrompt before showing Field Rescuer Mode.
+/**
+ * Field Rescuer Mode. Shown only after the OSP-73 biometric gate (RescuerAuthRoute); [expired] comes
+ * from OfflineGrantPolicy.
+ */
 @Composable
 fun MissionScreen(
     grant: StoredGrant,
@@ -45,12 +48,13 @@ fun MissionScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
         if (expired) {
-            // Wall-clock expiry (review R2): no "active" claim; only End Mission / Log Out remains.
+            // OSP-73: pencere doldu. Kayıtlar korunur, Röle/tarama sürer; PII ve senkron kilitli.
             Text(
-                stringResource(R.string.mission_expired),
+                stringResource(R.string.mission_reauth_title),
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.error,
             )
+            Text(stringResource(R.string.mission_expired), style = MaterialTheme.typography.bodyLarge)
         } else {
             Text(stringResource(R.string.mission_title), style = MaterialTheme.typography.headlineSmall)
             Text(stringResource(R.string.mission_authenticated_until, expiry), style = MaterialTheme.typography.bodyLarge)

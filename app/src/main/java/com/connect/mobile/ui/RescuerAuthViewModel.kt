@@ -9,6 +9,9 @@ import com.connect.mobile.auth.LoginStep
 import com.connect.mobile.auth.LoginUseCase
 import com.connect.mobile.auth.LogoutUseCase
 import com.connect.mobile.auth.SessionBootstrap
+import com.connect.mobile.auth.grant.AppLockState
+import com.connect.mobile.auth.grant.GrantStatus
+import com.connect.mobile.auth.grant.OfflineGrantChecker
 import com.connect.mobile.data.session.StoredGrant
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
@@ -18,8 +21,6 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.Clock
-import java.time.Duration
 
 sealed interface AuthUiState {
     data object Bootstrapping : AuthUiState
@@ -27,7 +28,10 @@ sealed interface AuthUiState {
     data object SigningIn : AuthUiState
     data object BindingSession : AuthUiState
     data object TearingDown : AuthUiState
-    /** [expired]: the grant's expires_at has passed on the wall clock; only End Mission / Log Out remains. */
+    /**
+     * [expired]: OfflineGrantPolicy says the offline window is over (wall clock, monotonic clock or
+     * clock rollback). Nothing is deleted; the screen shows "Online Re-Authentication Required".
+     */
     data class MissionActive(val grant: StoredGrant, val expired: Boolean = false) : AuthUiState
     data object LoggingOut : AuthUiState
 }
@@ -38,18 +42,22 @@ data class LoginForm(val email: String = "", val password: String = "") {
     override fun toString(): String = "LoginForm(email=$email, password=<redacted>)"
 }
 
-/** State machine of design section 4.1. */
+/** State machine of design section 4.1, gated by OSP-73's OfflineGrantPolicy and AppLockState. */
 class RescuerAuthViewModel(
     private val login: LoginUseCase,
     private val logout: LogoutUseCase,
     bootstrap: SessionBootstrap,
-    private val clock: Clock = Clock.systemUTC(),
+    private val grantChecker: OfflineGrantChecker,
+    private val appLock: AppLockState,
 ) : ViewModel() {
     private val _state = MutableStateFlow<AuthUiState>(AuthUiState.Bootstrapping)
     val state: StateFlow<AuthUiState> = _state.asStateFlow()
 
     private val _form = MutableStateFlow(LoginForm())
     val form: StateFlow<LoginForm> = _form.asStateFlow()
+
+    /** OSP-73: true iken Kurtarıcı Modu yerine kilit ekranı (BiometricGate) gösterilir. */
+    val locked: StateFlow<Boolean> = appLock.locked
 
     private var expiryWatch: Job? = null
 
@@ -75,6 +83,9 @@ class RescuerAuthViewModel(
 
     fun onPasswordChange(value: String) = _form.update { it.copy(password = value) }
 
+    /** OSP-73: yalnızca BiometricPrompt başarılı olunca çağrılır. */
+    fun onUnlocked() = appLock.unlock()
+
     /** Ignored outside LoginIdle, so double taps cannot start two logins. */
     fun submit() {
         if (_state.value !is AuthUiState.LoginIdle) return
@@ -96,7 +107,12 @@ class RescuerAuthViewModel(
                 LoginResult.Failure(AuthError.Server)
             }
             when (result) {
-                is LoginResult.Success -> showMission(result.grant)
+                is LoginResult.Success -> {
+                    // OSP-73: kullanıcı az önce şifresiyle çevrimiçi doğrulandı; ayrıca PIN/biyometri sorulmaz.
+                    // Kilit, bir sonraki yeniden başlatma veya >15 dk arka planda yine devreye girer.
+                    appLock.unlock()
+                    showMission(result.grant)
+                }
                 is LoginResult.Failure -> _state.value = AuthUiState.LoginIdle(error = result.error)
             }
         }
@@ -121,21 +137,50 @@ class RescuerAuthViewModel(
     }
 
     /**
-     * Shows the mission screen and flips it to the expired state once expires_at passes (review R2).
-     * Wall clock only, re-checked at least every minute so a changed device clock is noticed too.
-     * Nothing is deleted on expiry. TODO(OSP-73): monotonic clock + BiometricPrompt.
+     * OSP-73: the policy decides (wall clock + monotonic clock + rollback), re-checked at least every
+     * minute and exactly when the remaining time runs out. Nothing is deleted on expiry. A grant that
+     * belongs to another device or role is wiped locally and the login screen is shown.
      */
     private fun showMission(grant: StoredGrant) {
-        _state.value = AuthUiState.MissionActive(grant, expired = grant.isExpiredAt(clock.instant()))
         expiryWatch?.cancel()
         expiryWatch = viewModelScope.launch {
+            var first = true
             while (true) {
-                val now = clock.instant()
-                if (grant.isExpiredAt(now)) break
-                delay(Duration.between(now, grant.expiresAt).toMillis().coerceIn(1, EXPIRY_RECHECK_MS))
+                val status = try {
+                    grantChecker.check(grant)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    GrantStatus.Expired(GrantStatus.Expired.Reason.STATE_UNAVAILABLE)
+                }
+                if (status is GrantStatus.Mismatch || status is GrantStatus.Missing) {
+                    rejectGrant()
+                    return@launch
+                }
+                val expired = status is GrantStatus.Expired
+                if (first) {
+                    _state.value = AuthUiState.MissionActive(grant, expired)
+                    first = false
+                } else {
+                    _state.update { if (it is AuthUiState.MissionActive && it.grant == grant) it.copy(expired = expired) else it }
+                }
+                if (status is GrantStatus.Expired && status.reason.isFinal) break
+                val wait = (status as? GrantStatus.Valid)?.remainingMillis ?: EXPIRY_RECHECK_MS
+                delay(wait.coerceIn(1, EXPIRY_RECHECK_MS))
             }
-            _state.update { if (it is AuthUiState.MissionActive && it.grant == grant) it.copy(expired = true) else it }
         }
+    }
+
+    private suspend fun rejectGrant() {
+        _state.value = AuthUiState.TearingDown
+        try {
+            logout(remote = false)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // LoginIdle is shown anyway; the grant gate already failed closed.
+        }
+        _state.value = AuthUiState.LoginIdle(error = AuthError.GrantInvalid)
     }
 
     private companion object {
