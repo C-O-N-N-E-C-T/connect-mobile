@@ -2,6 +2,8 @@ package com.connect.mobile.auth
 
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
+import com.connect.mobile.auth.grant.FakeGrantAnchorStore
+import com.connect.mobile.auth.grant.GrantAnchor
 import com.connect.mobile.data.session.StoredGrant
 import com.connect.mobile.data.session.TestStoreHandle
 import kotlinx.coroutines.CancellationException
@@ -143,6 +145,23 @@ class LogoutUseCaseTest {
         gateway.initDelayMs = 3_000
         LogoutUseCase(gateway, backend, h.store)(remote = false)
         assertEquals(true, gateway.clearedAfterInit)
+        h.close()
+    }
+
+    /** OSP-73: logout also removes the grant's monotonic-clock anchor (before any remote call). */
+    @Test fun logoutClearsGrantAnchor() = runTest {
+        val h = seeded()
+        val anchors = FakeGrantAnchorStore().apply { anchor = GrantAnchor("k", 1, 0, 0, 0) }
+        var anchorDuringRemote: GrantAnchor? = anchors.anchor
+        backend.logoutBehavior = {
+            anchorDuringRemote = anchors.anchor
+            throw IOException("offline")
+        }
+        LogoutUseCase(gateway, backend, h.store, grantAnchors = anchors)(remote = true)
+        assertNull(anchorDuringRemote)
+        assertNull(anchors.anchor)
+        assertEquals(1, anchors.clears)
+        assertWipedButKept(h)
         h.close()
     }
 }

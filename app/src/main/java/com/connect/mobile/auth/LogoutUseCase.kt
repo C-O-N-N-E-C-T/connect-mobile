@@ -1,5 +1,6 @@
 package com.connect.mobile.auth
 
+import com.connect.mobile.auth.grant.GrantAnchorStore
 import com.connect.mobile.data.backend.AuthBackend
 import com.connect.mobile.data.session.SessionStore
 import com.connect.mobile.data.supabase.SupabaseAuthGateway
@@ -12,11 +13,11 @@ import kotlinx.coroutines.withTimeoutOrNull
  * Teardown shared by "End Mission / Log Out", role rejection, every post-sign-in failure and the
  * stale-session start-up rule (design 4.2).
  *
- * Order: (1) delete the grant keys at once, so a process death during the slow remote part can no
- * longer leave offline access behind; (2) best-effort remote calls with the in-memory token;
- * (3) always wipe the Supabase session and every auth key.
+ * Order: (1) delete the grant keys (and the OSP-73 grant anchor) at once, so a process death during
+ * the slow remote part can no longer leave offline access behind; (2) best-effort remote calls with
+ * the in-memory token; (3) always wipe the Supabase session and every auth key.
  *
- * Deletes ONLY the local grant and tokens. It has no Context and no DB handle, so it cannot reach
+ * Deletes ONLY the local grant, its anchor and tokens. It has no Context and no DB handle, so it cannot reach
  * unsynced victim records; the install device_id is kept.
  */
 class LogoutUseCase(
@@ -24,6 +25,7 @@ class LogoutUseCase(
     private val backend: AuthBackend,
     private val store: SessionStore,
     private val remoteTimeoutMs: Long = 5_000,
+    private val grantAnchors: GrantAnchorStore? = null,
 ) {
     /** Returns true when the local auth keys were removed (false only if the store itself failed). */
     suspend operator fun invoke(remote: Boolean): Boolean {
@@ -31,7 +33,11 @@ class LogoutUseCase(
         try {
             // 1. The grant is the offline-access gate; deleting it does not touch the in-memory
             //    Supabase session that the remote calls below still need.
-            withContext(NonCancellable) { quietly { store.clearGrant() } }
+            withContext(NonCancellable) {
+                quietly { store.clearGrant() }
+                // OSP-73: kalsa bile başka bir grant'e uygulanmaz (GrantAnchor.grantKey).
+                quietly { grantAnchors?.clear() }
+            }
             if (remote) {
                 // 2. Token snapshot in memory (awaits gateway init first), then best-effort remote calls.
                 val token = bestEffort { gateway.accessTokenOrNull() }
