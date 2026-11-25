@@ -6,6 +6,7 @@ import com.connect.mobile.data.backend.OfflineMissionGrantDto
 import com.connect.mobile.data.backend.SessionResponse
 import com.connect.mobile.data.session.SessionStore
 import com.connect.mobile.data.session.StoredGrant
+import com.connect.mobile.data.supabase.RefreshOutcome
 import com.connect.mobile.data.supabase.SignInOutcome
 import com.connect.mobile.data.supabase.SupabaseAuthGateway
 import kotlinx.coroutines.delay
@@ -67,6 +68,16 @@ class FakeGateway(private val events: Events) : SupabaseAuthGateway {
     override suspend fun signOut() {
         events += "signOut"
         signOutError?.let { throw it }
+    }
+
+    /** OSP-76: each call returns the next scripted outcome (the last one repeats). */
+    var refreshOutcomes: MutableList<RefreshOutcome> = mutableListOf(RefreshOutcome.Rejected)
+    var refreshCalls = 0
+
+    override suspend fun refreshSession(): RefreshOutcome {
+        refreshCalls++
+        events += "refreshSession"
+        return if (refreshOutcomes.size > 1) refreshOutcomes.removeAt(0) else refreshOutcomes.first()
     }
 
     override suspend fun clearLocalSession() {

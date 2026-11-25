@@ -16,4 +16,5 @@ class LazyAuthGateway(create: () -> SupabaseAuthGateway) : SupabaseAuthGateway {
     override suspend fun currentUserIdOrNull() = delegate.currentUserIdOrNull()
     override suspend fun signOut() = delegate.signOut()
     override suspend fun clearLocalSession() = delegate.clearLocalSession()
+    override suspend fun refreshSession() = delegate.refreshSession()
 }

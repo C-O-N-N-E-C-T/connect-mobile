@@ -28,6 +28,15 @@
     <string name="mission_end_dialog_cancel">Cancel</string>
     <string name="mission_logging_out">Logging out…</string>
 
+    <!-- OSP-76: reconnection upload gate -->
+    <string name="sync_waiting">%1$d victim records are waiting to upload. They are kept on this device and retried automatically.</string>
+    <string name="sync_sign_in_required">Sign in online to upload %1$d queued victim records. They are kept on this device until then.</string>
+    <string name="sync_sign_in_button">Sign in online</string>
+    <string name="sync_pending_after_sign_in">%1$d queued victim records will be uploaded after you sign in.</string>
+    <string name="sync_locked_title">Field Rescuer Mode is locked</string>
+    <string name="sync_locked_records_kept">%1$d unsynced victim records stay encrypted on this device and were not deleted.</string>
+    <string name="sync_locked_sign_in">Sign in again</string>
+
     <string name="error_invalid_input">Enter your e-mail and password.</string>
     <string name="error_bad_credentials">Incorrect e-mail or password.</string>
     <string name="error_account_disabled">This account is disabled. Contact your administrator.</string>

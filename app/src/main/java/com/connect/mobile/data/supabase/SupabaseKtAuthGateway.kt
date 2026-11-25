@@ -33,6 +33,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import java.io.IOException
+import java.time.Instant
 import java.util.Base64
 
 class SupabaseKtAuthGateway(
@@ -193,6 +194,48 @@ class SupabaseKtAuthGateway(
         auth.stopAutoRefreshForCurrentSession()
     }
 
+    /**
+     * OSP-76 step 1. After a long offline period the access token in memory is expired and supabase-kt
+     * may be in RefreshFailure (it then no longer treats the stored session as "current"). The stored
+     * session is imported again WITHOUT auto-refresh, then refreshed explicitly, so the caller gets a
+     * token issued just now. Exceptions are mapped, never thrown.
+     */
+    override suspend fun refreshSession(): RefreshOutcome {
+        awaitInitialized()
+        // Logged out (save gate closed): there is no session to refresh.
+        if (sessionManager.savesBlocked) return RefreshOutcome.Rejected
+        return try {
+            if (auth.sessionStatus.value !is SessionStatus.Authenticated) {
+                auth.loadFromStorage(autoRefresh = false)
+            }
+            if (auth.currentSessionOrNull() == null) return RefreshOutcome.Rejected
+            auth.refreshCurrentSession()
+            auth.currentAccessTokenOrNull()?.let { RefreshOutcome.Refreshed(it) } ?: RefreshOutcome.Rejected
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: AuthRestException) {
+            log.debug("supabase refresh rejected: ${e.errorCode?.value} (${e.statusCode})")
+            refreshFailure(e.statusCode)
+        } catch (e: RestException) {
+            log.debug("supabase refresh rejected: ${e.error} (${e.statusCode})")
+            refreshFailure(e.statusCode)
+        } catch (e: IOException) {
+            log.debug("supabase refresh network failure: ${e.causeChainMessages()}")
+            RefreshOutcome.Transient
+        } catch (e: IllegalStateException) {
+            // supabase-kt: "No session found" when the session vanished between the checks above.
+            RefreshOutcome.Rejected
+        } catch (e: Exception) {
+            // Unknown failure: keep the queue and retry later rather than asking for a new login.
+            log.debug("supabase refresh failure: ${e.javaClass.simpleName}")
+            RefreshOutcome.Transient
+        }
+    }
+
+    /** 429 / 5xx are temporary (retry with backoff); any other HTTP refusal needs a new online login. */
+    private fun refreshFailure(status: Int): RefreshOutcome =
+        if (status == 429 || status >= 500) RefreshOutcome.Transient else RefreshOutcome.Rejected
+
     companion object {
         /**
          * Builds the SupabaseClient with the app's Auth configuration (design 3.2). Returns null for an
@@ -246,6 +289,17 @@ internal fun jwtSubject(jwt: String): String? = runCatching {
     (Json.parseToJsonElement(text).jsonObject["sub"] as? JsonPrimitive)?.contentOrNull
 }.getOrNull()
 
+/**
+ * OSP-76: `exp` claim of a JWT as an Instant, decoded WITHOUT verification. Used only to refuse
+ * sending an expired token (AC-19); the backend still verifies every token. Null if unreadable.
+ */
+internal fun jwtExpiresAt(jwt: String): Instant? = runCatching {
+    val payload = jwt.split('.')[1]
+    val text = String(Base64.getUrlDecoder().decode(payload.trimEnd('=')), Charsets.UTF_8)
+    val exp = (Json.parseToJsonElement(text).jsonObject["exp"] as? JsonPrimitive)?.contentOrNull?.toLong()
+    exp?.let(Instant::ofEpochSecond)
+}.getOrNull()
+
 /** Used when SUPABASE_URL / SUPABASE_ANON_KEY are missing: no client is created at all. */
 class NotConfiguredAuthGateway(private val deleteStoredSession: suspend () -> Unit) : SupabaseAuthGateway {
     override suspend fun awaitInitialized() = Unit
@@ -254,4 +308,5 @@ class NotConfiguredAuthGateway(private val deleteStoredSession: suspend () -> Un
     override suspend fun currentUserIdOrNull(): String? = null
     override suspend fun signOut() = Unit
     override suspend fun clearLocalSession() = deleteStoredSession()
+    override suspend fun refreshSession(): RefreshOutcome = RefreshOutcome.Rejected
 }
