@@ -90,6 +90,9 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     // OSP-75: Keystore ana anahtarı ile AEAD (şifreli oturum deposu + DB anahtarı sarma).
     implementation(libs.tink.android)
+    // OSP-73: kayıp telefon koruması (BiometricPrompt) ve onun istediği FragmentActivity.
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.fragment)
 
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
