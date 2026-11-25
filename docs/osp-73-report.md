@@ -20,7 +20,7 @@ Re-Authentication Required". After an app restart or more than 15 minutes in the
 Rescuer Mode asks for a fingerprint or the device PIN/pattern (BiometricPrompt). A successful online
 login unlocks it directly (no PIN right after the password).
 
-**Status:** code complete; build, all 183 unit tests and lint pass; tested on an Android 17 emulator
+**Status:** code complete; build, all 185 unit tests and lint pass; tested on an Android 17 emulator
 (section 5). Not yet on a physical phone; nothing has been pushed.
 
 ### 2. Acceptance criteria
@@ -46,7 +46,7 @@ Updated: `libs.versions.toml`, `app/build.gradle.kts` (biometric 1.4.0-rc01, fra
 `RescuerAuthViewModelTest`. Not changed: `LoginUseCase`, `data/session/*`.
 
 ### 4. Verification
-- `./gradlew testDebugUnitTest assembleDebug lintDebug`: **183 unit tests, 0 failures**; debug APK built.
+- `./gradlew testDebugUnitTest assembleDebug lintDebug`: **185 unit tests, 0 failures**; debug APK built.
 - Lint: no findings in OSP-73 code (10 older warnings: dependency updates, app icon).
 - Local note: this machine has Build Tools 36.0.0, the project pins 37.0.0 (OSP-75). The local run used
   a temporary Gradle init script outside the repo to use 36.0.0; the repository was not changed for this.
@@ -86,7 +86,7 @@ Gerekli" uyarısıyla kilitlenir. Uygulama yeniden başlatıldığında veya 15 
 kaldığında Kurtarıcı Modu parmak izi ya da cihaz PIN/deseni ister (BiometricPrompt). Başarılı çevrimiçi giriş
 kilidi doğrudan açar (şifreden hemen sonra ayrıca PIN sorulmaz).
 
-**Durum:** kod tamam; derleme, 183 birim testinin tamamı ve lint geçiyor; Android 17 emülatöründe test
+**Durum:** kod tamam; derleme, 185 birim testinin tamamı ve lint geçiyor; Android 17 emülatöründe test
 edildi (bölüm 4). Fiziksel telefonda henüz denenmedi; hiçbir şey push edilmedi.
 
 ### 2. Kabul kriterleri
@@ -104,7 +104,7 @@ PII, senkron, Kurban ve Röle ekranları henüz yok; policy onlar için de karar
 notunun 7. bölümünde.
 
 ### 3. Doğrulama
-- `./gradlew testDebugUnitTest assembleDebug lintDebug`: **183 birim testi, 0 hata**; debug APK derlendi.
+- `./gradlew testDebugUnitTest assembleDebug lintDebug`: **185 birim testi, 0 hata**; debug APK derlendi.
 - Lint: OSP-73 kodunda bulgu yok (10 eski uyarı: kütüphane güncellemeleri, uygulama ikonu).
 - Yerel not: bu makinede Build Tools 36.0.0 var, proje 37.0.0 istiyor (OSP-75). Yerel çalıştırmada repo
   dışında geçici bir Gradle init script'i ile 36.0.0 kullanıldı; repoda bunun için değişiklik yapılmadı.

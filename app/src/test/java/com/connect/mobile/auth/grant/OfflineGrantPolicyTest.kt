@@ -149,6 +149,35 @@ class OfflineGrantPolicyTest {
         assertEquals(GrantStatus.Expired(CLOCK_ROLLBACK), check())
     }
 
+    /** Geri alınmış saatle çapa kaydedilmez; saat düzelince kapalı geçen süre de sayılır. */
+    @Test fun rolledBackClockAfterRebootDoesNotLoseOffTime() {
+        val short = OfflineGrantPolicy(offlineGrantHours = 24)
+        check(p = short)
+        pass(hours(10))
+        check(p = short)
+        val before = anchor
+        mono.reboot()
+        now = auth.plus(hours(2)) // açılışta saat sıfırlanmış / geri alınmış
+        assertEquals(GrantStatus.Expired(CLOCK_ROLLBACK), check(p = short))
+        assertEquals(before, anchor)
+        mono.advance(Duration.ofMinutes(1))
+        now = auth.plus(hours(30)) // NTP saati düzeltti: telefon 20 saat kapalı kalmış
+        assertEquals(GrantStatus.Expired(MONOTONIC_WINDOW), check(p = short))
+    }
+
+    /** BOOT_COUNT okunamazsa yeniden başlatma fark edilmeyebilir; duvar saati alt sınır olarak kalır. */
+    @Test fun unknownBootCountStillCountsOffTime() {
+        val short = OfflineGrantPolicy(offlineGrantHours = 24)
+        mono.boot = MonotonicClock.UNKNOWN_BOOT
+        check(p = short)
+        pass(hours(10))
+        check(p = short)
+        // Yeniden başlatma: sayaç yine UNKNOWN, açılıştan beri geçen süre çapadakinden büyük.
+        mono.elapsed = anchor!!.elapsedAtAnchorMillis + hours(1).toMillis()
+        now = auth.plus(hours(30))
+        assertEquals(GrantStatus.Expired(MONOTONIC_WINDOW), check(p = short))
+    }
+
     @Test fun clockBeforeAuthenticatedAtIsRollback() {
         now = auth.minus(Duration.ofMinutes(10))
         assertEquals(GrantStatus.Expired(CLOCK_ROLLBACK), check())

@@ -61,7 +61,7 @@ sealed interface Access {
     data object ReauthRequired : Access
 }
 
-/** [anchor]: kaydedilmesi gereken güncel çapa (grant yoksa veya uyuşmuyorsa null). */
+/** [anchor]: kaydedilmesi gereken güncel çapa (grant yoksa, uyuşmuyorsa veya saat geri alındıysa null). */
 data class GrantEvaluation(val status: GrantStatus, val anchor: GrantAnchor?)
 
 /**
@@ -102,9 +102,12 @@ class OfflineGrantPolicy(offlineGrantHours: Long = DEFAULT_OFFLINE_GRANT_HOURS) 
             own.bootCount == bootCount &&
             elapsedRealtimeMillis >= own.elapsedAtAnchorMillis
 
+        // Duvar saatine göre harcanan süre her zaman alt sınırdır: saati ileri almak yalnızca pencereyi
+        // kısaltır. Böylece BOOT_COUNT okunamadığında (UNKNOWN_BOOT) fark edilmeyen bir yeniden
+        // başlatma da kapalı geçen süreyi kaybettirmez.
         val consumed = when {
             own == null -> wallConsumed // ilk kontrol (ör. login hemen sonrası): sunucu zamanından başla
-            sameBoot -> own.consumedAtAnchorMillis + (elapsedRealtimeMillis - own.elapsedAtAnchorMillis)
+            sameBoot -> maxOf(own.consumedAtAnchorMillis + (elapsedRealtimeMillis - own.elapsedAtAnchorMillis), wallConsumed)
             else -> maxOf(own.consumedAtAnchorMillis, wallConsumed) // yeniden başlatma: kapalı süre duvar saatiyle
         }.coerceAtLeast(0L)
 
@@ -125,7 +128,10 @@ class OfflineGrantPolicy(offlineGrantHours: Long = DEFAULT_OFFLINE_GRANT_HOURS) 
             consumed >= windowMillis -> GrantStatus.Expired(GrantStatus.Expired.Reason.MONOTONIC_WINDOW)
             else -> GrantStatus.Valid(minOf(windowMillis - consumed, expiresMs - nowMs))
         }
-        return GrantEvaluation(status, next)
+        // Geri alınmış saatle hesaplanan çapa kaydedilmez: eski çapa (açılış sayacı, harcanan süre,
+        // son görülen zaman) korunur, saat düzelince kapalı geçen süre de doğru sayılır.
+        val rolledBack = status is GrantStatus.Expired && status.reason == GrantStatus.Expired.Reason.CLOCK_ROLLBACK
+        return GrantEvaluation(status, if (rolledBack) null else next)
     }
 
     fun access(capability: Capability, status: GrantStatus): Access = when {
