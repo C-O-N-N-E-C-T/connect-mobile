@@ -2,7 +2,7 @@
 
 Jira story OSP-73 (CONNECT project, epic OSP-56 / E10): Android OfflineGrantPolicy, configurable 72 h
 window, expiry preservation and Biometric/PIN lock. Repository: `connect-mobile`, branch `OSP-73`.
-Date: 2026-11-25. Design: [osp-73-design.md](osp-73-design.md).
+Date: 2026-11-25, updated 2026-11-26 (review fixes, OSP-76 merge). Design: [osp-73-design.md](osp-73-design.md).
 
 [English](#english) · [Türkçe](#türkçe)
 
@@ -20,8 +20,8 @@ Re-Authentication Required". After an app restart or more than 15 minutes in the
 Rescuer Mode asks for a fingerprint or the device PIN/pattern (BiometricPrompt). A successful online
 login unlocks it directly (no PIN right after the password).
 
-**Status:** code complete; build, all 185 unit tests and lint pass; tested on an Android 17 emulator
-(section 5). Not yet on a physical phone; nothing has been pushed.
+**Status:** code complete and pushed (PR #4); build, all 215 unit tests (with main/OSP-76) and lint
+pass; tested on an Android 17 emulator (sections 5 and 6). Not yet on a physical phone.
 
 ### 2. Acceptance criteria
 | Requirement | Implementation | Verification |
@@ -46,10 +46,9 @@ Updated: `libs.versions.toml`, `app/build.gradle.kts` (biometric 1.4.0-rc01, fra
 `RescuerAuthViewModelTest`. Not changed: `LoginUseCase`, `data/session/*`.
 
 ### 4. Verification
-- `./gradlew testDebugUnitTest assembleDebug lintDebug`: **185 unit tests, 0 failures**; debug APK built.
-- Lint: no findings in OSP-73 code (10 older warnings: dependency updates, app icon).
-- Local note: this machine has Build Tools 36.0.0, the project pins 37.0.0 (OSP-75). The local run used
-  a temporary Gradle init script outside the repo to use 36.0.0; the repository was not changed for this.
+- `./gradlew testDebugUnitTest assembleDebug lintDebug`: **215 unit tests, 0 failures** (including main /
+  OSP-76); debug APK built with Build Tools 37.0.0, no override.
+- Lint: no findings in OSP-73 code (older warnings: dependency updates, app icon, OSP-76 plurals).
 
 ### 5. Emulator test (Medium_Phone_API_37.0, debug build, real Supabase sign-in with the seed rescuer, fake OSP-60 backend)
 | Scenario | Result |
@@ -68,9 +67,20 @@ Updated: `libs.versions.toml`, `app/build.gradle.kts` (biometric 1.4.0-rc01, fra
 
 No crash (`FATAL EXCEPTION`) during the whole run. The device clock was restored and automatic time re-enabled afterwards.
 
-### 6. Open items
-- Install Build Tools 37.0.0 (Android Studio → SDK Manager) and rerun the build without the override.
+### 6. Review fixes (2026-11-26)
+| Finding | Fix | Verification |
+|---|---|---|
+| Window extended by "app closed 70 h -> roll clock back -> reboot" | `ClockChangeReceiver` (ACTION_TIME_CHANGED) updates the anchor with the monotonic clock; rollback also records consumed time | `clockChangeCheckKeepsUptimeAcrossReboot`, `deepRollbackStillRecordsConsumedTime`; emulator: receiver starts the killed app, rollback -> re-auth, fixed clock -> active |
+| Same, but "reboot first, then roll back" | `BootReceiver` (directBootAware) stores `(BOOT_COUNT, wall clock)` at LOCKED_BOOT_COMPLETED; the policy uses it only for the current boot after a reboot | `rebootThenRollbackIsCaughtByBootFloor`, `futureBootRecordThenNewLoginIsValid`, `bootRecordFromPreviousBootIsIgnored`; emulator: record written while locked, rollback after reboot -> re-auth |
+| No way out of the lock screen | "Try again" and "Sign in online with password" (grant kept, lock kept until a successful login) | `signInFromLockKeepsGrantAndLock`; emulator: button shown, login screen opens, restart returns to the lock |
+| Anchor shared the session key | Own Keystore alias `connect_grant_anchor_key` | emulator: anchor rebuilt after the key change, mission active |
+| OSP-76 merge | Upload gate runs only with a Valid grant (CLOUD_SYNC locked on expiry) | `expiredGrantNeverSyncs`, `syncStopsWhenWindowEnds` |
+
+### 7. Open items
+- Team decision: `androidx.biometric` 1.4.0-rc01 or stable 1.1.0.
+- Known limit: a force-stopped app gets no broadcasts (design note section 8).
 - Real OSP-60 backend: tested only with the debug fake backend (CONNECT_FAKE_BACKEND=true).
+- Physical phone and API 26-29 not tested yet.
 
 ---
 
@@ -86,8 +96,8 @@ Gerekli" uyarısıyla kilitlenir. Uygulama yeniden başlatıldığında veya 15 
 kaldığında Kurtarıcı Modu parmak izi ya da cihaz PIN/deseni ister (BiometricPrompt). Başarılı çevrimiçi giriş
 kilidi doğrudan açar (şifreden hemen sonra ayrıca PIN sorulmaz).
 
-**Durum:** kod tamam; derleme, 185 birim testinin tamamı ve lint geçiyor; Android 17 emülatöründe test
-edildi (bölüm 4). Fiziksel telefonda henüz denenmedi; hiçbir şey push edilmedi.
+**Durum:** kod tamam ve push edildi (PR #4); derleme, 215 birim testinin tamamı (main/OSP-76 ile) ve lint
+geçiyor; Android 17 emülatöründe test edildi (bölüm 4 ve 5). Fiziksel telefonda henüz denenmedi.
 
 ### 2. Kabul kriterleri
 | İstek | Uygulama | Doğrulama |
@@ -104,10 +114,9 @@ PII, senkron, Kurban ve Röle ekranları henüz yok; policy onlar için de karar
 notunun 7. bölümünde.
 
 ### 3. Doğrulama
-- `./gradlew testDebugUnitTest assembleDebug lintDebug`: **185 birim testi, 0 hata**; debug APK derlendi.
-- Lint: OSP-73 kodunda bulgu yok (10 eski uyarı: kütüphane güncellemeleri, uygulama ikonu).
-- Yerel not: bu makinede Build Tools 36.0.0 var, proje 37.0.0 istiyor (OSP-75). Yerel çalıştırmada repo
-  dışında geçici bir Gradle init script'i ile 36.0.0 kullanıldı; repoda bunun için değişiklik yapılmadı.
+- `./gradlew testDebugUnitTest assembleDebug lintDebug`: **215 birim testi, 0 hata** (main / OSP-76 dahil);
+  debug APK Build Tools 37.0.0 ile, override olmadan derlendi.
+- Lint: OSP-73 kodunda bulgu yok (eski uyarılar: kütüphane güncellemeleri, uygulama ikonu, OSP-76 plurals).
 
 ### 4. Emülatör testi (Medium_Phone_API_37.0, debug build, seed rescuer hesabıyla gerçek Supabase girişi, sahte OSP-60 backend)
 | Senaryo | Sonuç |
@@ -126,6 +135,17 @@ notunun 7. bölümünde.
 
 Test boyunca hiç çökme (`FATAL EXCEPTION`) olmadı. Sonrasında cihaz saati geri alındı, otomatik saat açıldı.
 
-### 5. Açık işler
-- Build Tools 37.0.0 kurulup (Android Studio → SDK Manager) derleme override olmadan tekrarlanmalı.
+### 5. Review düzeltmeleri (2026-11-26)
+| Bulgu | Düzeltme | Doğrulama |
+|---|---|---|
+| "Uygulama kapalı 70 sa -> saati geri al -> yeniden başlat" ile süre uzatma | `ClockChangeReceiver` (ACTION_TIME_CHANGED) çapayı monoton saatle günceller; geri almada da harcanan süre kaydedilir | `clockChangeCheckKeepsUptimeAcrossReboot`, `deepRollbackStillRecordsConsumedTime`; emülatör: receiver kapalı uygulamayı başlatır, geri alma -> yeniden doğrulama, saat düzelince aktif |
+| Aynısı, "önce yeniden başlat, sonra geri al" | `BootReceiver` (directBootAware) LOCKED_BOOT_COMPLETED'da `(BOOT_COUNT, duvar saati)` kaydeder; policy yalnızca bu açılışta ve yeniden başlatma sonrası kullanır | `rebootThenRollbackIsCaughtByBootFloor`, `futureBootRecordThenNewLoginIsValid`, `bootRecordFromPreviousBootIsIgnored`; emülatör: kayıt kilitliyken yazıldı, geri alma -> yeniden doğrulama |
+| Kilit ekranından çıkış yok | "Yeniden dene" ve "Şifreyle çevrimiçi giriş yap" (grant ve kilit korunur, yalnızca başarılı giriş açar) | `signInFromLockKeepsGrantAndLock`; emülatör: buton görünür, giriş ekranı açılır, yeniden başlatma kilide döner |
+| Çapa oturum anahtarını paylaşıyordu | Ayrı Keystore anahtarı `connect_grant_anchor_key` | emülatör: anahtar değişince çapa yeniden kuruldu, görev aktif |
+| OSP-76 merge | Yükleme kapısı yalnızca grant Valid iken çalışır (CLOUD_SYNC süre dolunca kilitli) | `expiredGrantNeverSyncs`, `syncStopsWhenWindowEnds` |
+
+### 6. Açık işler
+- Ekip kararı: `androidx.biometric` 1.4.0-rc01 mi, kararlı 1.1.0 mı.
+- Bilinen sınır: "Zorla durdur" yapılmış uygulamaya yayın gelmez (tasarım notu §8).
 - Gerçek OSP-60 backend: yalnızca debug sahte backend ile test edildi (CONNECT_FAKE_BACKEND=true).
+- Fiziksel telefon ve API 26-29 henüz denenmedi.
