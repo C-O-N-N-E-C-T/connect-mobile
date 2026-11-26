@@ -19,6 +19,8 @@ class OfflineGrantChecker(
     private val deviceIdProvider: DeviceIdProvider,
     private val wallClock: Clock,
     private val monotonic: MonotonicClock,
+    /** Açılışta kaydedilen duvar saati alt sınırı ([com.connect.mobile.system.BootWallFloor]). */
+    private val wallFloor: () -> Long = { OfflineGrantPolicy.NO_WALL_FLOOR },
 ) {
     private val mutex = Mutex()
 
@@ -40,6 +42,11 @@ class OfflineGrantChecker(
             now = wallClock.instant(),
             elapsedRealtimeMillis = monotonic.elapsedRealtimeMillis(),
             bootCount = monotonic.bootCount(),
+            wallFloorMillis = try {
+                wallFloor()
+            } catch (e: Exception) {
+                OfflineGrantPolicy.NO_WALL_FLOOR // kayıt okunamazsa diğer kontroller sürer
+            },
         )
         evaluation.anchor?.let { next ->
             try {

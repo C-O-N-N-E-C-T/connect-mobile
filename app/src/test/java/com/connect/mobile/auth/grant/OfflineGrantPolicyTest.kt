@@ -26,6 +26,8 @@ class OfflineGrantPolicyTest {
     private val mono = FakeMonotonicClock()
     private var now = auth
     private var anchor: GrantAnchor? = null
+    /** BootReceiver'ın açılışta kaydettiği duvar saati (yoksa NO_WALL_FLOOR). */
+    private var floor: Long = OfflineGrantPolicy.NO_WALL_FLOOR
 
     /** Uygulamadaki gibi: her kontrol çapayı günceller. */
     private fun check(
@@ -33,7 +35,7 @@ class OfflineGrantPolicyTest {
         deviceId: String = device,
         p: OfflineGrantPolicy = policy,
     ): GrantStatus {
-        val e = p.evaluate(g, deviceId, anchor, now, mono.elapsedRealtimeMillis(), mono.bootCount())
+        val e = p.evaluate(g, deviceId, anchor, now, mono.elapsedRealtimeMillis(), mono.bootCount(), floor)
         e.anchor?.let { anchor = it }
         return e.status
     }
@@ -242,5 +244,53 @@ class OfflineGrantPolicyTest {
 
     @Test fun windowMustBePositive() {
         assertThrows(IllegalArgumentException::class.java) { OfflineGrantPolicy(offlineGrantHours = 0) }
+    }
+
+    /**
+     * Review sırası: uygulama kapalı 70 sa -> ÖNCE yeniden başlat -> SONRA saati geri al. Monoton saat
+     * sıfırlandı; BootReceiver açılışta (LOCKED_BOOT_COMPLETED, saat henüz doğru) duvar saatini kaydetti.
+     */
+    @Test fun rebootThenRollbackIsCaughtByBootFloor() {
+        check()
+        pass(hours(70)) // uygulama kapalı, kontrol yok
+        mono.reboot()
+        floor = now.toEpochMilli() // açılış kaydı
+        now = auth // kilit açıldıktan sonra saat geri alındı
+        assertEquals(GrantStatus.Expired(CLOCK_ROLLBACK), check())
+        assertEquals(hours(70).toMillis(), anchor!!.consumedAtAnchorMillis)
+        // Saat açılış kaydının 5 dk altına bile çekilmezse: 70 sa harcanmış sayılır, pencere yeniden açılmaz.
+        now = Instant.ofEpochMilli(floor)
+        assertEquals(GrantStatus.Valid(hours(2).toMillis()), check())
+    }
+
+    /** BOOT_COMPLETED kontrolü doğru saatle çalıştıysa sonraki geri alma son görülen zamandan yakalanır. */
+    @Test fun bootCheckThenRollbackIsCaught() {
+        check()
+        pass(hours(70))
+        mono.reboot()
+        assertEquals(GrantStatus.Valid(hours(2).toMillis()), check()) // BOOT_COMPLETED -> check()
+        now = auth
+        assertEquals(GrantStatus.Expired(CLOCK_ROLLBACK), check())
+    }
+
+    /** Girişten önceki bir açılış kaydı pencereyi etkilemez. */
+    @Test fun bootFloorBeforeLoginHasNoEffect() {
+        floor = auth.minus(hours(5)).toEpochMilli()
+        check()
+        pass(hours(1))
+        assertEquals(GrantStatus.Valid(hours(71).toMillis()), check())
+    }
+
+    /**
+     * BİLİNEN SINIR (tasarım notu §8): uygulama "Zorla durdur" yapılmışsa sistem açılış/saat yayınlarını
+     * göndermez; açılış kaydı olmadan "70 sa -> yeniden başlat -> saati geri al" sırası görülemez.
+     * Bu test sınırı belgeler; davranış değişirse (ör. GNSS zamanı eklenirse) güncellenmeli.
+     */
+    @Test fun knownLimitWithoutBootSignalUptimeIsLost() {
+        check()
+        pass(hours(70))
+        mono.reboot()
+        now = auth.plus(Duration.ofMinutes(1)) // saat son görülen zamana geri alındı, kayıt yok
+        assertTrue((check() as GrantStatus.Valid).remainingMillis > hours(70).toMillis())
     }
 }

@@ -35,6 +35,7 @@ import com.connect.mobile.data.supabase.NotConfiguredAuthGateway
 import com.connect.mobile.data.supabase.SupabaseAuthGateway
 import com.connect.mobile.data.supabase.SupabaseKtAuthGateway
 import com.connect.mobile.sync.EmptyOutboxStore
+import com.connect.mobile.system.BootWallFloor
 import com.connect.mobile.sync.ReconnectSync
 import com.connect.mobile.ui.RescuerAuthViewModel
 import com.connect.mobile.util.AppLogger
@@ -123,6 +124,7 @@ class AppContainer(context: Context) {
         deviceIdProvider = deviceIdProvider,
         wallClock = Clock.systemUTC(),
         monotonic = monotonicClock,
+        wallFloor = BootWallFloor(appContext)::read,
     )
 
     private val httpClient by lazy { HttpClientFactory.create() }

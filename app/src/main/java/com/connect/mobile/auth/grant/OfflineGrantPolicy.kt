@@ -84,6 +84,7 @@ class OfflineGrantPolicy(offlineGrantHours: Long = DEFAULT_OFFLINE_GRANT_HOURS) 
         now: Instant,
         elapsedRealtimeMillis: Long,
         bootCount: Int,
+        wallFloorMillis: Long = NO_WALL_FLOOR,
     ): GrantEvaluation {
         if (grant == null) return GrantEvaluation(GrantStatus.Missing, anchor = null)
         if (grant.deviceId != ourDeviceId) {
@@ -97,7 +98,10 @@ class OfflineGrantPolicy(offlineGrantHours: Long = DEFAULT_OFFLINE_GRANT_HOURS) 
         val authMs = grant.authenticatedAt.toEpochMilli()
         val expiresMs = grant.expiresAt.toEpochMilli()
         val own = anchor?.takeIf { it.belongsTo(grant) }
-        val wallConsumed = nowMs - authMs
+        // [wallFloorMillis]: telefon açılırken, kullanıcı saati değiştiremeden ÖNCE kaydedilen duvar saati
+        // (BootReceiver, LOCKED_BOOT_COMPLETED). Gerçekte en az bu ana gelinmiştir: "uygulama kapalı 70 sa ->
+        // yeniden başlat -> saati geri al" sırasında monoton saat sıfırlansa da aradaki süre buradan görülür.
+        val wallConsumed = maxOf(nowMs, wallFloorMillis) - authMs
         val sameBoot = own != null &&
             own.bootCount == bootCount &&
             elapsedRealtimeMillis >= own.elapsedAtAnchorMillis
@@ -111,7 +115,7 @@ class OfflineGrantPolicy(offlineGrantHours: Long = DEFAULT_OFFLINE_GRANT_HOURS) 
             else -> maxOf(own.consumedAtAnchorMillis, wallConsumed) // yeniden başlatma: kapalı süre duvar saatiyle
         }.coerceAtLeast(0L)
 
-        val lastSeen = own?.lastSeenWallMillis ?: nowMs
+        val lastSeen = maxOf(own?.lastSeenWallMillis ?: nowMs, wallFloorMillis)
         val next = GrantAnchor(
             grantKey = GrantAnchor.keyOf(grant),
             bootCount = bootCount,
@@ -134,6 +138,11 @@ class OfflineGrantPolicy(offlineGrantHours: Long = DEFAULT_OFFLINE_GRANT_HOURS) 
         // Çapa yokken (own == null) geri alınmış saat son görülen zaman olarak yazılmaz.
         val rolledBack = status is GrantStatus.Expired && status.reason == GrantStatus.Expired.Reason.CLOCK_ROLLBACK
         return GrantEvaluation(status, if (rolledBack && own == null) null else next)
+    }
+
+    companion object {
+        /** Açılış kaydı yok (ör. ilk kurulum, testler): alt sınır uygulanmaz. */
+        const val NO_WALL_FLOOR: Long = Long.MIN_VALUE
     }
 
     fun access(capability: Capability, status: GrantStatus): Access = when {

@@ -20,6 +20,7 @@ Jira: OSP-73 (epic OSP-56 / E10). Bağımlılıklar: OSP-60 (grant veren backend
 | `GrantAnchor` | `auth/grant/GrantAnchor.kt` | Pencereden harcanan sürenin monoton saat kaydı |
 | `DataStoreGrantAnchorStore` | `data/grant/DataStoreGrantAnchorStore.kt` | Çapa için ayrı şifreli dosya (`connect_grant_anchor.enc`, ayrı anahtar) |
 | `ClockChangeReceiver` | `system/ClockChangeReceiver.kt` | Saat değişince çapayı monoton saatle günceller |
+| `BootReceiver`, `BootWallFloor` | `system/BootReceiver.kt`, `system/BootWallFloor.kt` | Açılışta duvar saatini kaydeder, sonra grant kontrolü |
 | `OfflineGrantChecker` | `auth/grant/OfflineGrantChecker.kt` | Policy + gerçek saatler + çapa deposu; ekranların tek giriş noktası |
 | `AppLockState` | `auth/grant/AppLockState.kt` | Süreç başında kilitli; >15 dk arka plan sonrası yeniden kilit |
 | `BiometricGate` | `ui/lock/BiometricGate.kt` | "Kilidi Aç" ekranı + BiometricPrompt |
@@ -38,6 +39,8 @@ gösterir; `LogoutUseCase` grant ile birlikte çapayı da siler.
 - Saat değişikliği: `ClockChangeReceiver` (`ACTION_TIME_CHANGED`, uygulama kapalıyken de çalışır) aynı
   açılışta kontrol çalıştırır; monoton saatle harcanan süre yeniden başlatmadan önce çapaya yazılır.
   Eşzamanlı kontroller `OfflineGrantChecker` içinde `Mutex` ile sıraya girer.
+- Açılış kaydı: `BootReceiver` açılışta duvar saatini `BootWallFloor`'a (cihaz korumalı depo) yazar.
+  `harcanan ≥ max(şimdi, açılış_kaydı) − authenticated_at` ve `son_görülen ≥ açılış_kaydı`.
 - Süre doldu: `şimdi ≥ expires_at` VEYA `harcanan ≥ pencere` VEYA geri alma.
 - Çapa `grantKey` (user, device, authenticated_at, expires_at) ile tek grant'e bağlıdır. Çapa yoksa
   (ör. OSP-74 sürümünden kalan grant) duvar saatinden kurulur.
@@ -94,12 +97,21 @@ if (appLock.isGuarded(Capability.VICTIM_PII_DETAIL)) { /* önce BiometricGate */
   kalır (fail-closed).
 - Çapa okunamazsa (Keystore geçici hatası) durum `STATE_UNAVAILABLE` sayılır, PII/senkron kilitlenir,
   bir sonraki kontrol (en geç 60 sn) yeniden dener.
-- Monoton saat yeniden başlatmada sıfırlanır; çapa uygulamanın son çalıştığı (veya saatin son
-  değiştirildiği) anda kalır. Saat değiştirilmeden geçen süre + telefonun kapalı kaldığı süre yeniden
-  başlatmadan sonra yalnızca duvar saatiyle sayılır. Saat değişikliği `ClockChangeReceiver` ile
-  yakalandığı için "uygulama kapalı 70 sa -> saati geri al -> yeniden başlat" senaryosu kapanır
-  (`clockChangeCheckKeepsUptimeAcrossReboot`). Açık kalan: telefon KAPALIYKEN geçen süre, açılışta saat son
-  görülen zamana çekilirse görülemez (çevrimdışı güvenilir zaman kaynağı yok). İleride: GNSS zamanı alt
-  sınır olarak, ya da periyodik çapa güncellemesi (WorkManager; yeni bağımlılık, ekip onayı gerekir).
+- Monoton saat yeniden başlatmada sıfırlanır. Uygulama kapalıyken geçen süre üç yoldan korunur:
+  (1) saat değişirse `ClockChangeReceiver` aynı açılışta çapayı monoton saatle günceller;
+  (2) telefon açılırken, kullanıcı kilidi açıp saati değiştiremeden önce `BootReceiver`
+  (`LOCKED_BOOT_COMPLETED`, directBootAware) duvar saatini `BootWallFloor`'a yazar; policy bunu son görülen
+  zaman ve harcanan süre için alt sınır olarak kullanır; (3) `BOOT_COMPLETED`'da tam kontrol çalışır.
+  Böylece "uygulama kapalı 70 sa -> saati geri al -> yeniden başlat" ve "70 sa -> yeniden başlat -> saati
+  geri al" sıraları kapanır (`clockChangeCheckKeepsUptimeAcrossReboot`, `rebootThenRollbackIsCaughtByBootFloor`).
+  Açık kalanlar:
+  - Uygulama **"Zorla durdur"** yapılmışsa sistem bu yayınları göndermez (uygulama yeniden açılana kadar);
+    "zorla durdur -> 70 sa -> yeniden başlat -> saati geri al" sırası görülemez
+    (`knownLimitWithoutBootSignalUptimeIsLost`).
+  - Telefon **kapalıyken** geçen süre: açılışta saat donanım saatinden gelir; donanım saati de
+    değiştirilmişse görülemez.
+  Çevrimdışı güvenilir zaman kaynağı yoktur. İleride: GNSS zamanı alt sınır olarak.
+- Açılış kaydı yalnızca artar; telefon açılırken saat ileri bir tarihteyse gerçek zaman o ana gelene kadar
+  PII/senkron kilitli kalır (fail-closed). Root'lu cihazda kayıt dosyası değiştirilebilir (çapa gibi).
 - Saat ileri alınıp süre dolarsa (`WALL_CLOCK` / `MONOTONIC_WINDOW`) saat düzeltilse de pencere geri
   açılmaz; harcanan süre çapaya yazılmıştır. Yeniden çevrimiçi giriş gerekir (fail-closed, bilinçli).
