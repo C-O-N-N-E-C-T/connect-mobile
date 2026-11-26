@@ -26,8 +26,13 @@ class OfflineGrantPolicyTest {
     private val mono = FakeMonotonicClock()
     private var now = auth
     private var anchor: GrantAnchor? = null
-    /** BootReceiver'ın açılışta kaydettiği duvar saati (yoksa NO_WALL_FLOOR). */
-    private var floor: Long = OfflineGrantPolicy.NO_WALL_FLOOR
+    /** BootReceiver'ın açılışta kaydettiği (açılış sayacı, duvar saati); yoksa null. */
+    private var bootRecord: BootWallRecord? = null
+
+    /** BootReceiver gibi: bu açılış için o anki duvar saatini kaydeder. */
+    private fun recordBoot(at: Instant = now) {
+        bootRecord = BootWallRecord(mono.bootCount(), at.toEpochMilli())
+    }
 
     /** Uygulamadaki gibi: her kontrol çapayı günceller. */
     private fun check(
@@ -35,7 +40,7 @@ class OfflineGrantPolicyTest {
         deviceId: String = device,
         p: OfflineGrantPolicy = policy,
     ): GrantStatus {
-        val e = p.evaluate(g, deviceId, anchor, now, mono.elapsedRealtimeMillis(), mono.bootCount(), floor)
+        val e = p.evaluate(g, deviceId, anchor, now, mono.elapsedRealtimeMillis(), mono.bootCount(), bootRecord)
         e.anchor?.let { anchor = it }
         return e.status
     }
@@ -254,12 +259,13 @@ class OfflineGrantPolicyTest {
         check()
         pass(hours(70)) // uygulama kapalı, kontrol yok
         mono.reboot()
-        floor = now.toEpochMilli() // açılış kaydı
+        recordBoot() // açılış kaydı (saat henüz doğru)
+        val bootWall = now
         now = auth // kilit açıldıktan sonra saat geri alındı
         assertEquals(GrantStatus.Expired(CLOCK_ROLLBACK), check())
         assertEquals(hours(70).toMillis(), anchor!!.consumedAtAnchorMillis)
         // Saat açılış kaydının 5 dk altına bile çekilmezse: 70 sa harcanmış sayılır, pencere yeniden açılmaz.
-        now = Instant.ofEpochMilli(floor)
+        now = bootWall
         assertEquals(GrantStatus.Valid(hours(2).toMillis()), check())
     }
 
@@ -275,7 +281,7 @@ class OfflineGrantPolicyTest {
 
     /** Girişten önceki bir açılış kaydı pencereyi etkilemez. */
     @Test fun bootFloorBeforeLoginHasNoEffect() {
-        floor = auth.minus(hours(5)).toEpochMilli()
+        recordBoot(at = auth.minus(hours(5)))
         check()
         pass(hours(1))
         assertEquals(GrantStatus.Valid(hours(71).toMillis()), check())
@@ -292,5 +298,50 @@ class OfflineGrantPolicyTest {
         mono.reboot()
         now = auth.plus(Duration.ofMinutes(1)) // saat son görülen zamana geri alındı, kayıt yok
         assertTrue((check() as GrantStatus.Valid).remainingMillis > hours(70).toMillis())
+    }
+
+    /**
+     * Review: telefon yanlışlıkla ileri tarihle (ör. 1 yıl sonra) açıldı. Eski grant bu açılışta geri alma
+     * sayılır (fail-closed), ama YENİ giriş kaydı yok sayar ve Valid olur; sonraki açılışta kayıt taşınmaz.
+     */
+    @Test fun futureBootRecordThenNewLoginIsValid() {
+        check()
+        pass(hours(1))
+        mono.reboot()
+        recordBoot(at = now.plus(Duration.ofDays(365))) // donanım saati ileri tarihteydi
+        assertEquals(GrantStatus.Expired(CLOCK_ROLLBACK), check()) // eski grant: geri alma gibi görünür
+
+        // Yeni çevrimiçi giriş (sunucu zamanı = gerçek zaman), aynı açılış, kayıt hâlâ ileri tarihli.
+        val newAuth = now
+        val fresh = StoredGrant("u1", device, "rescuer", newAuth, newAuth.plus(hours(72)))
+        assertEquals(GrantStatus.Valid(hours(72).toMillis()), check(g = fresh))
+        pass(hours(1))
+        assertEquals(GrantStatus.Valid(hours(71).toMillis()), check(g = fresh))
+
+        // Sonraki açılış: kayıt yazılmadan önce (ör. yayın gecikti) eski açılışın kaydı kullanılmaz.
+        pass(hours(1))
+        mono.reboot()
+        assertEquals(GrantStatus.Valid(hours(70).toMillis()), check(g = fresh))
+    }
+
+    /** Önceki açılışın kaydı (sayacı tutmuyor) yeniden başlatmadan sonra kullanılmaz. */
+    @Test fun bootRecordFromPreviousBootIsIgnored() {
+        check()
+        recordBoot(at = auth.plus(Duration.ofDays(365))) // açılış 1'in (yanlış) kaydı
+        pass(hours(1))
+        check()
+        mono.reboot() // açılış 2, bu açılış için kayıt yok
+        assertEquals(GrantStatus.Valid(hours(71).toMillis()), check())
+        pass(hours(1))
+        assertEquals(GrantStatus.Valid(hours(70).toMillis()), check())
+    }
+
+    /** Açılış sayacı okunamıyorsa kayıt bir açılışa bağlanamaz, kullanılmaz. */
+    @Test fun bootRecordIgnoredWhenBootCountUnknown() {
+        mono.boot = MonotonicClock.UNKNOWN_BOOT
+        check()
+        pass(hours(1))
+        bootRecord = BootWallRecord(MonotonicClock.UNKNOWN_BOOT, now.plus(Duration.ofDays(365)).toEpochMilli())
+        assertEquals(GrantStatus.Valid(hours(71).toMillis()), check())
     }
 }

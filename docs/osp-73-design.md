@@ -20,7 +20,7 @@ Jira: OSP-73 (epic OSP-56 / E10). Bağımlılıklar: OSP-60 (grant veren backend
 | `GrantAnchor` | `auth/grant/GrantAnchor.kt` | Pencereden harcanan sürenin monoton saat kaydı |
 | `DataStoreGrantAnchorStore` | `data/grant/DataStoreGrantAnchorStore.kt` | Çapa için ayrı şifreli dosya (`connect_grant_anchor.enc`, ayrı anahtar) |
 | `ClockChangeReceiver` | `system/ClockChangeReceiver.kt` | Saat değişince çapayı monoton saatle günceller |
-| `BootReceiver`, `BootWallFloor` | `system/BootReceiver.kt`, `system/BootWallFloor.kt` | Açılışta duvar saatini kaydeder, sonra grant kontrolü |
+| `BootReceiver`, `BootWallFloor` | `system/BootReceiver.kt`, `system/BootWallFloor.kt` | Açılışta `(BOOT_COUNT, duvar saati)` kaydeder, sonra grant kontrolü |
 | `OfflineGrantChecker` | `auth/grant/OfflineGrantChecker.kt` | Policy + gerçek saatler + çapa deposu; ekranların tek giriş noktası |
 | `AppLockState` | `auth/grant/AppLockState.kt` | Süreç başında kilitli; >15 dk arka plan sonrası yeniden kilit |
 | `BiometricGate` | `ui/lock/BiometricGate.kt` | "Kilidi Aç" ekranı + BiometricPrompt |
@@ -39,8 +39,11 @@ gösterir; `LogoutUseCase` grant ile birlikte çapayı da siler.
 - Saat değişikliği: `ClockChangeReceiver` (`ACTION_TIME_CHANGED`, uygulama kapalıyken de çalışır) aynı
   açılışta kontrol çalıştırır; monoton saatle harcanan süre yeniden başlatmadan önce çapaya yazılır.
   Eşzamanlı kontroller `OfflineGrantChecker` içinde `Mutex` ile sıraya girer.
-- Açılış kaydı: `BootReceiver` açılışta duvar saatini `BootWallFloor`'a (cihaz korumalı depo) yazar.
+- Açılış kaydı: `BootReceiver` her açılışta bir kez `(BOOT_COUNT, duvar saati)` kaydını `BootWallFloor`'a
+  (cihaz korumalı depo) yazar; önceki açılışın kaydının yerine geçer. Policy kaydı YALNIZCA bu açılışa
+  aitse ve çapa önceki bir açılıştan kalmışsa (yeniden başlatma sonrası) kullanır:
   `harcanan ≥ max(şimdi, açılış_kaydı) − authenticated_at` ve `son_görülen ≥ açılış_kaydı`.
+  Çapa yoksa (yeni giriş) kayıt kullanılmaz; sunucunun `authenticated_at`'i esastır.
 - Süre doldu: `şimdi ≥ expires_at` VEYA `harcanan ≥ pencere` VEYA geri alma.
 - Çapa `grantKey` (user, device, authenticated_at, expires_at) ile tek grant'e bağlıdır. Çapa yoksa
   (ör. OSP-74 sürümünden kalan grant) duvar saatinden kurulur.
@@ -100,8 +103,9 @@ if (appLock.isGuarded(Capability.VICTIM_PII_DETAIL)) { /* önce BiometricGate */
 - Monoton saat yeniden başlatmada sıfırlanır. Uygulama kapalıyken geçen süre üç yoldan korunur:
   (1) saat değişirse `ClockChangeReceiver` aynı açılışta çapayı monoton saatle günceller;
   (2) telefon açılırken, kullanıcı kilidi açıp saati değiştiremeden önce `BootReceiver`
-  (`LOCKED_BOOT_COMPLETED`, directBootAware) duvar saatini `BootWallFloor`'a yazar; policy bunu son görülen
-  zaman ve harcanan süre için alt sınır olarak kullanır; (3) `BOOT_COMPLETED`'da tam kontrol çalışır.
+  (`LOCKED_BOOT_COMPLETED`, directBootAware) `(BOOT_COUNT, duvar saati)` kaydını `BootWallFloor`'a yazar;
+  policy bunu yeniden başlatma sonrası son görülen zaman ve harcanan süre için alt sınır olarak kullanır;
+  (3) `BOOT_COMPLETED`'da tam kontrol çalışır.
   Böylece "uygulama kapalı 70 sa -> saati geri al -> yeniden başlat" ve "70 sa -> yeniden başlat -> saati
   geri al" sıraları kapanır (`clockChangeCheckKeepsUptimeAcrossReboot`, `rebootThenRollbackIsCaughtByBootFloor`).
   Açık kalanlar:
@@ -111,7 +115,9 @@ if (appLock.isGuarded(Capability.VICTIM_PII_DETAIL)) { /* önce BiometricGate */
   - Telefon **kapalıyken** geçen süre: açılışta saat donanım saatinden gelir; donanım saati de
     değiştirilmişse görülemez.
   Çevrimdışı güvenilir zaman kaynağı yoktur. İleride: GNSS zamanı alt sınır olarak.
-- Açılış kaydı yalnızca artar; telefon açılırken saat ileri bir tarihteyse gerçek zaman o ana gelene kadar
-  PII/senkron kilitli kalır (fail-closed). Root'lu cihazda kayıt dosyası değiştirilebilir (çapa gibi).
+- Telefon yanlışlıkla ileri bir tarihle açılırsa (ör. donanım saati 2027) o açılışta MEVCUT grant geri
+  alma sayılır (fail-closed, PII/senkron kilitli). Yeni çevrimiçi giriş kaydı kullanmaz ve geçerli olur;
+  kayıt bir sonraki açılışta yenisiyle değişir (`futureBootRecordThenNewLoginIsValid`).
+  BOOT_COUNT okunamayan cihazda açılış kaydı tutulmaz. Root'lu cihazda kayıt dosyası değiştirilebilir.
 - Saat ileri alınıp süre dolarsa (`WALL_CLOCK` / `MONOTONIC_WINDOW`) saat düzeltilse de pencere geri
   açılmaz; harcanan süre çapaya yazılmıştır. Yeniden çevrimiçi giriş gerekir (fail-closed, bilinçli).

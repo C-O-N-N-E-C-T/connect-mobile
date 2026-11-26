@@ -26,6 +26,13 @@ data class GrantAnchor(
     }
 }
 
+/**
+ * Telefon açılırken (LOCKED_BOOT_COMPLETED, kullanıcı saati değiştiremeden önce) kaydedilen duvar saati
+ * ve o açılışın sayacı (OSP-73). Yalnızca kendi açılışında ve yeniden başlatma sonrası kullanılır; eski
+ * bir açılışın (ör. yanlışlıkla ileri tarihle açılmış) kaydı sonraki açılışlara ve yeni grant'lere taşınmaz.
+ */
+data class BootWallRecord(val bootCount: Int, val wallMillis: Long)
+
 interface GrantAnchorStore {
     suspend fun read(): GrantAnchor?
     suspend fun write(anchor: GrantAnchor)

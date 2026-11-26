@@ -124,7 +124,7 @@ class AppContainer(context: Context) {
         deviceIdProvider = deviceIdProvider,
         wallClock = Clock.systemUTC(),
         monotonic = monotonicClock,
-        wallFloor = BootWallFloor(appContext)::read,
+        bootRecord = BootWallFloor(appContext)::read,
     )
 
     private val httpClient by lazy { HttpClientFactory.create() }

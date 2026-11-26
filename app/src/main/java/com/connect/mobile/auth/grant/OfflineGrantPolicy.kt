@@ -84,7 +84,7 @@ class OfflineGrantPolicy(offlineGrantHours: Long = DEFAULT_OFFLINE_GRANT_HOURS) 
         now: Instant,
         elapsedRealtimeMillis: Long,
         bootCount: Int,
-        wallFloorMillis: Long = NO_WALL_FLOOR,
+        bootRecord: BootWallRecord? = null,
     ): GrantEvaluation {
         if (grant == null) return GrantEvaluation(GrantStatus.Missing, anchor = null)
         if (grant.deviceId != ourDeviceId) {
@@ -98,13 +98,22 @@ class OfflineGrantPolicy(offlineGrantHours: Long = DEFAULT_OFFLINE_GRANT_HOURS) 
         val authMs = grant.authenticatedAt.toEpochMilli()
         val expiresMs = grant.expiresAt.toEpochMilli()
         val own = anchor?.takeIf { it.belongsTo(grant) }
-        // [wallFloorMillis]: telefon açılırken, kullanıcı saati değiştiremeden ÖNCE kaydedilen duvar saati
-        // (BootReceiver, LOCKED_BOOT_COMPLETED). Gerçekte en az bu ana gelinmiştir: "uygulama kapalı 70 sa ->
-        // yeniden başlat -> saati geri al" sırasında monoton saat sıfırlansa da aradaki süre buradan görülür.
-        val wallConsumed = maxOf(nowMs, wallFloorMillis) - authMs
         val sameBoot = own != null &&
             own.bootCount == bootCount &&
             elapsedRealtimeMillis >= own.elapsedAtAnchorMillis
+
+        // Açılış kaydı ([bootRecord], BootReceiver): telefon açılırken, kullanıcı saati değiştiremeden ÖNCE
+        // okunan duvar saati; gerçekte en az bu ana gelinmiştir. "Uygulama kapalı 70 sa -> yeniden başlat ->
+        // saati geri al" sırasında monoton saat sıfırlansa da aradaki süre buradan görülür. Yalnızca:
+        // - bu açılışa aitse (eski açılışın kaydı, ör. yanlışlıkla ileri tarihle açılış, taşınmaz),
+        // - çapa ÖNCEKİ bir açılıştan kalmışsa (yeniden başlatma sonrası). Çapa yoksa (yeni giriş) kullanılmaz:
+        //   sunucunun authenticated_at'i esastır; açılış girişten önce olduğundan kayıt yeni grant'i etkilemez.
+        val floorMs = bootRecord
+            ?.takeIf { bootCount != MonotonicClock.UNKNOWN_BOOT && it.bootCount == bootCount }
+            ?.takeIf { own != null && own.bootCount != bootCount }
+            ?.wallMillis
+            ?: NO_WALL_FLOOR
+        val wallConsumed = maxOf(nowMs, floorMs) - authMs
 
         // Duvar saatine göre harcanan süre her zaman alt sınırdır: saati ileri almak yalnızca pencereyi
         // kısaltır. Böylece BOOT_COUNT okunamadığında (UNKNOWN_BOOT) fark edilmeyen bir yeniden
@@ -115,7 +124,7 @@ class OfflineGrantPolicy(offlineGrantHours: Long = DEFAULT_OFFLINE_GRANT_HOURS) 
             else -> maxOf(own.consumedAtAnchorMillis, wallConsumed) // yeniden başlatma: kapalı süre duvar saatiyle
         }.coerceAtLeast(0L)
 
-        val lastSeen = maxOf(own?.lastSeenWallMillis ?: nowMs, wallFloorMillis)
+        val lastSeen = maxOf(own?.lastSeenWallMillis ?: nowMs, floorMs)
         val next = GrantAnchor(
             grantKey = GrantAnchor.keyOf(grant),
             bootCount = bootCount,
@@ -141,7 +150,7 @@ class OfflineGrantPolicy(offlineGrantHours: Long = DEFAULT_OFFLINE_GRANT_HOURS) 
     }
 
     companion object {
-        /** Açılış kaydı yok (ör. ilk kurulum, testler): alt sınır uygulanmaz. */
+        /** Açılış kaydı kullanılmıyor: alt sınır uygulanmaz. */
         const val NO_WALL_FLOOR: Long = Long.MIN_VALUE
     }
 
