@@ -9,6 +9,11 @@ import com.connect.mobile.auth.LoginStep
 import com.connect.mobile.auth.LoginUseCase
 import com.connect.mobile.auth.LogoutUseCase
 import com.connect.mobile.auth.SessionBootstrap
+import com.connect.mobile.auth.grant.Access
+import com.connect.mobile.auth.grant.AppLockState
+import com.connect.mobile.auth.grant.Capability
+import com.connect.mobile.auth.grant.GrantStatus
+import com.connect.mobile.auth.grant.OfflineGrantChecker
 import com.connect.mobile.data.session.StoredGrant
 import com.connect.mobile.sync.SyncBackoff
 import com.connect.mobile.sync.SyncOutcome
@@ -20,10 +25,10 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import java.time.Clock
-import java.time.Duration
 
 sealed interface AuthUiState {
     data object Bootstrapping : AuthUiState
@@ -37,7 +42,8 @@ sealed interface AuthUiState {
     data object BindingSession : AuthUiState
     data object TearingDown : AuthUiState
     /**
-     * [expired]: the grant's expires_at has passed on the wall clock; only End Mission / Log Out remains.
+     * [expired]: OfflineGrantPolicy says the offline window is over (wall clock, monotonic clock or
+     * clock rollback). Nothing is deleted; the screen shows "Online Re-Authentication Required".
      * [sync] (OSP-76): state of the reconnection upload gate.
      */
     data class MissionActive(
@@ -69,12 +75,13 @@ data class LoginForm(val email: String = "", val password: String = "") {
     override fun toString(): String = "LoginForm(email=$email, password=<redacted>)"
 }
 
-/** State machine of design section 4.1. */
+/** State machine of design section 4.1, gated by OSP-73's OfflineGrantPolicy and AppLockState. */
 class RescuerAuthViewModel(
     private val login: LoginUseCase,
     private val logout: LogoutUseCase,
     bootstrap: SessionBootstrap,
-    private val clock: Clock = Clock.systemUTC(),
+    private val grantChecker: OfflineGrantChecker,
+    private val appLock: AppLockState,
     /** OSP-76 reconnection gate; null = no upload gate (e.g. tests of the login flow only). */
     private val sync: SyncRunner? = null,
     /** OSP-76: connectivity; the gate runs each time this becomes true while a mission is active. */
@@ -87,8 +94,17 @@ class RescuerAuthViewModel(
     private val _form = MutableStateFlow(LoginForm())
     val form: StateFlow<LoginForm> = _form.asStateFlow()
 
+    /** OSP-73: true iken Kurtarıcı Modu yerine kilit ekranı (BiometricGate) gösterilir. */
+    val locked: StateFlow<Boolean> = appLock.locked
+
     private var expiryWatch: Job? = null
     private var syncJob: Job? = null
+
+    /**
+     * OSP-73 x OSP-76: cloud sync is allowed only while the grant is Valid (Capability.CLOUD_SYNC is
+     * locked on expiry). Set by the expiry watch after each policy check; the sync gate waits for it.
+     */
+    private val grantAllowsSync = MutableStateFlow(false)
 
     init {
         viewModelScope.launch {
@@ -112,6 +128,24 @@ class RescuerAuthViewModel(
 
     fun onPasswordChange(value: String) = _form.update { it.copy(password = value) }
 
+    /** OSP-73: yalnızca BiometricPrompt başarılı olunca çağrılır. */
+    fun onUnlocked() = appLock.unlock()
+
+    /**
+     * OSP-73: kilit ekranından şifreyle çevrimiçi giriş (biyometri / ekran kilidi kullanılamıyorsa).
+     * Kilit AÇILMAZ ve grant SİLİNMEZ: yalnızca başarılı giriş kilidi açar; giriş olmazsa yeniden
+     * başlatma kilit ekranına geri döner. Kuyruktaki kayıtların sayısı giriş ekranında gösterilir.
+     */
+    fun signInFromLock() {
+        val mission = _state.value as? AuthUiState.MissionActive ?: return
+        if (!appLock.locked.value) return
+        val pending = (mission.sync as? SyncBanner.SignInRequired)?.pending
+            ?: (mission.sync as? SyncBanner.Waiting)?.pending
+            ?: 0
+        stopMissionJobs()
+        _state.value = AuthUiState.LoginIdle(pendingUploads = pending)
+    }
+
     /** Ignored outside LoginIdle, so double taps cannot start two logins. */
     fun submit() {
         val idle = _state.value as? AuthUiState.LoginIdle ?: return
@@ -134,8 +168,13 @@ class RescuerAuthViewModel(
                 LoginResult.Failure(AuthError.Server)
             }
             when (result) {
-                // OSP-76: a successful sign-in restarts the upload gate (records upload after re-authentication).
-                is LoginResult.Success -> showMission(result.grant)
+                is LoginResult.Success -> {
+                    // OSP-73: kullanıcı az önce şifresiyle çevrimiçi doğrulandı; ayrıca PIN/biyometri sorulmaz.
+                    // Kilit, bir sonraki yeniden başlatma veya >15 dk arka planda yine devreye girer.
+                    appLock.unlock()
+                    // OSP-76: a successful sign-in restarts the upload gate (records upload after re-authentication).
+                    showMission(result.grant)
+                }
                 // The queued records are still on the device; keep telling the rescuer about them.
                 is LoginResult.Failure ->
                     _state.value = AuthUiState.LoginIdle(error = result.error, pendingUploads = pendingUploads)
@@ -179,20 +218,40 @@ class RescuerAuthViewModel(
     }
 
     /**
-     * Shows the mission screen and flips it to the expired state once expires_at passes (review R2).
-     * Wall clock only, re-checked at least every minute so a changed device clock is noticed too.
-     * Nothing is deleted on expiry. TODO(OSP-73): monotonic clock + BiometricPrompt.
+     * OSP-73: the policy decides (wall clock + monotonic clock + rollback), re-checked at least every
+     * minute and exactly when the remaining time runs out. Nothing is deleted on expiry. A grant that
+     * belongs to another device or role is wiped locally and the login screen is shown.
      */
     private fun showMission(grant: StoredGrant) {
-        _state.value = AuthUiState.MissionActive(grant, expired = grant.isExpiredAt(clock.instant()))
         expiryWatch?.cancel()
+        grantAllowsSync.value = false
         expiryWatch = viewModelScope.launch {
+            var first = true
             while (true) {
-                val now = clock.instant()
-                if (grant.isExpiredAt(now)) break
-                delay(Duration.between(now, grant.expiresAt).toMillis().coerceIn(1, EXPIRY_RECHECK_MS))
+                val status = try {
+                    grantChecker.check(grant)
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    GrantStatus.Expired(GrantStatus.Expired.Reason.STATE_UNAVAILABLE)
+                }
+                if (status is GrantStatus.Mismatch || status is GrantStatus.Missing) {
+                    rejectGrant()
+                    return@launch
+                }
+                val expired = status is GrantStatus.Expired
+                if (first) {
+                    _state.value = AuthUiState.MissionActive(grant, expired)
+                    first = false
+                } else {
+                    _state.update { if (it is AuthUiState.MissionActive && it.grant == grant) it.copy(expired = expired) else it }
+                }
+                // After the state update, so a banner from the gate always lands on this MissionActive.
+                grantAllowsSync.value = grantChecker.access(Capability.CLOUD_SYNC, status) == Access.Allowed
+                if (status is GrantStatus.Expired && status.reason.isFinal) break
+                val wait = (status as? GrantStatus.Valid)?.remainingMillis ?: EXPIRY_RECHECK_MS
+                delay(wait.coerceIn(1, EXPIRY_RECHECK_MS))
             }
-            _state.update { if (it is AuthUiState.MissionActive && it.grant == grant) it.copy(expired = true) else it }
         }
         startSyncGate()
     }
@@ -200,12 +259,16 @@ class RescuerAuthViewModel(
     /**
      * OSP-76: every time connectivity returns during a mission, run the reconnection gate. Going
      * offline cancels a pass (collectLatest); transient failures are retried with backoff while online.
+     * OSP-73: the gate also needs a Valid grant; when the offline window ends a running pass is cancelled.
      */
     private fun startSyncGate() {
         val runner = sync ?: return
         syncJob?.cancel()
         syncJob = viewModelScope.launch {
-            online.collectLatest { isOnline -> if (isOnline) syncWhileOnline(runner) }
+            // OSP-73: no upload with an expired / unverifiable grant ("Online Re-Authentication Required").
+            combine(online, grantAllowsSync) { isOnline, allowed -> isOnline && allowed }
+                .distinctUntilChanged()
+                .collectLatest { canSync -> if (canSync) syncWhileOnline(runner) }
         }
     }
 
@@ -255,6 +318,22 @@ class RescuerAuthViewModel(
     private fun stopMissionJobs() {
         expiryWatch?.cancel()
         syncJob?.cancel()
+        grantAllowsSync.value = false
+    }
+
+    private suspend fun rejectGrant() {
+        // A grant for another device / role must not upload anything (OSP-73 Mismatch).
+        syncJob?.cancel()
+        grantAllowsSync.value = false
+        _state.value = AuthUiState.TearingDown
+        try {
+            logout(remote = false)
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            // LoginIdle is shown anyway; the grant gate already failed closed.
+        }
+        _state.value = AuthUiState.LoginIdle(error = AuthError.GrantInvalid)
     }
 
     private companion object {

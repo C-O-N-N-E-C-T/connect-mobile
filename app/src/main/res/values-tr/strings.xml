@@ -19,12 +19,26 @@
 
     <string name="mission_title">Saha Kurtarıcısı Modu etkin</string>
     <string name="mission_authenticated_until">Çevrimdışı görev için %1$s tarihine kadar yetkilendirildi</string>
-    <string name="mission_expired">Çevrimdışı görev yetkisinin süresi doldu. İnternete bağlanıp yeniden giriş yapın.</string>
+    <!-- OSP-73: OfflineGrantPolicy çevrimdışı pencerenin dolduğunu söylediğinde gösterilir. -->
+    <string name="mission_reauth_title">Çevrimiçi Yeniden Doğrulama Gerekli</string>
+    <string name="mission_expired">Çevrimdışı görev penceresi sona erdi. Bu cihazdaki kazazede kayıtları korunur ve röle çalışmaya devam eder. Kazazede detayları ve bulut senkronizasyonu, yeniden çevrimiçi giriş yapana kadar kilitli kalır.</string>
     <string name="mission_end_button">Görevi Bitir / Çıkış Yap</string>
     <string name="mission_end_dialog_title">Görev bitirilsin mi?</string>
     <string name="mission_end_dialog_text">Çevrimdışı erişim bir sonraki çevrimiçi girişe kadar sona erer. Bu cihazdaki senkronize edilmemiş kazazede kayıtları korunur.</string>
     <string name="mission_end_dialog_cancel">İptal</string>
     <string name="mission_logging_out">Çıkış yapılıyor…</string>
+
+    <!-- OSP-73: kayıp telefon koruması (BiometricPrompt). -->
+    <string name="lock_title">Saha Kurtarıcısı Modu kilitli</string>
+    <string name="lock_text">Devam etmek için parmak iziniz veya cihaz ekran kilidinizle kimliğinizi doğrulayın.</string>
+    <string name="lock_unlock_button">Kilidi Aç</string>
+    <string name="lock_prompt_title">Saha Kurtarıcısı Modunun kilidini aç</string>
+    <string name="lock_prompt_subtitle">Parmak izinizi veya cihaz PIN, desen ya da parolanızı kullanın</string>
+    <string name="lock_no_credential">Saha Kurtarıcısı Modunu kullanmak için bu cihazda bir ekran kilidi (PIN, desen, parola veya parmak izi) ayarlayın.</string>
+    <string name="lock_open_settings">Güvenlik ayarlarını aç</string>
+    <string name="lock_unavailable">Kilit açma şu anda kullanılamıyor. Biraz sonra tekrar deneyin.</string>
+    <string name="lock_retry">Yeniden dene</string>
+    <string name="lock_sign_in_online">Şifreyle çevrimiçi giriş yap</string>
 
     <!-- OSP-76: bağlantı dönüşü yükleme kapısı -->
     <string name="sync_waiting">%1$d kazazede kaydı yüklenmeyi bekliyor. Kayıtlar bu cihazda korunuyor ve otomatik olarak tekrar denenecek.</string>

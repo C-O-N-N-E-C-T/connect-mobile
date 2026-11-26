@@ -5,6 +5,8 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <!-- OSP-75: çevrimiçi/çevrimdışı takibi (NetworkCallback); çevrimdışıyken token yenileme durdurulur. -->
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- OSP-73: açılışta duvar saatini kaydet ve grant çapasını güncelle (süre uzatmaya karşı). -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
 
     <application
         android:name=".ConnectApplication"
@@ -25,5 +27,25 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- OSP-73: saat elle değiştirildiğinde grant çapasını monoton saatle güncelle (süre uzatmaya karşı). -->
+        <receiver
+            android:name=".system.ClockChangeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIME_SET" />
+            </intent-filter>
+        </receiver>
+
+        <!-- OSP-73: directBootAware, LOCKED_BOOT_COMPLETED kullanıcı kilidi açmadan (saat değiştirilemezken) gelsin diye. -->
+        <receiver
+            android:name=".system.BootReceiver"
+            android:directBootAware="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.LOCKED_BOOT_COMPLETED" />
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

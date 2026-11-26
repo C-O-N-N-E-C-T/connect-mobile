@@ -18,6 +18,10 @@ tink = "1.24.0"
 # OSP-75: yalnızca androidTest; SQLCipher dosya başlığı şifrelemesi doğrulaması (Room/E8 öncesi).
 sqlcipher = "4.20.0"
 androidxSqlite = "2.7.0"
+# OSP-73: BiometricPrompt (biyometri veya cihaz PIN/deseni).
+biometric = "1.4.0-rc01"
+# OSP-73: BiometricPrompt FragmentActivity ister; biometric'in getirdiği eski 1.6.2 yerine güncel sürüm.
+fragment = "1.9.1"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
@@ -43,6 +47,8 @@ androidx-test-runner = { group = "androidx.test", name = "runner", version.ref =
 tink-android = { group = "com.google.crypto.tink", name = "tink-android", version.ref = "tink" }
 sqlcipher-android = { group = "net.zetetic", name = "sqlcipher-android", version.ref = "sqlcipher" }
 androidx-sqlite = { group = "androidx.sqlite", name = "sqlite", version.ref = "androidxSqlite" }
+androidx-biometric = { group = "androidx.biometric", name = "biometric", version.ref = "biometric" }
+androidx-fragment = { group = "androidx.fragment", name = "fragment", version.ref = "fragment" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }
