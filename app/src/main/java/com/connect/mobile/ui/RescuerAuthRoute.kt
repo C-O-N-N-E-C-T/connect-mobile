@@ -21,6 +21,7 @@ import com.connect.mobile.R
 import com.connect.mobile.ui.common.SupplementaryDisclaimer
 import com.connect.mobile.ui.lock.BiometricGate
 import com.connect.mobile.ui.login.LoginScreen
+import com.connect.mobile.ui.mission.LockedScreen
 import com.connect.mobile.ui.mission.MissionScreen
 
 @Composable
@@ -44,8 +45,17 @@ fun RescuerAuthRoute(viewModel: RescuerAuthViewModel) {
                     expired = s.expired,
                     onEndMission = viewModel::endMission,
                     modifier = modifier,
+                    sync = s.sync,
+                    onSignInToUpload = viewModel::signInToUpload,
                 )
             }
+            // OSP-76 step 5: Rescuer Mode and PII locked after 403 DEVICE_REVOKED / ACCOUNT_DISABLED.
+            is AuthUiState.Locked -> LockedScreen(
+                reason = s.reason,
+                pendingUploads = s.pendingUploads,
+                onSignIn = viewModel::leaveLock,
+                modifier = modifier,
+            )
             else -> LoginScreen(
                 state = s,
                 form = form,

@@ -10,6 +10,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -22,6 +23,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.connect.mobile.R
 import com.connect.mobile.data.session.StoredGrant
+import com.connect.mobile.ui.SyncBanner
 import com.connect.mobile.ui.common.ExpiryFormatter
 import com.connect.mobile.ui.common.SupplementaryDisclaimer
 
@@ -35,6 +37,9 @@ fun MissionScreen(
     expired: Boolean,
     onEndMission: () -> Unit,
     modifier: Modifier = Modifier,
+    // OSP-76: reconnection upload state and the "sign in online" action of step 3.
+    sync: SyncBanner = SyncBanner.None,
+    onSignInToUpload: () -> Unit = {},
 ) {
     var confirm by rememberSaveable { mutableStateOf(false) }
     // Not remembered: a time-zone change does not recreate the activity, so format on every composition.
@@ -58,6 +63,21 @@ fun MissionScreen(
         } else {
             Text(stringResource(R.string.mission_title), style = MaterialTheme.typography.headlineSmall)
             Text(stringResource(R.string.mission_authenticated_until, expiry), style = MaterialTheme.typography.bodyLarge)
+        }
+        when (sync) {
+            SyncBanner.None -> Unit
+            is SyncBanner.Waiting ->
+                Text(stringResource(R.string.sync_waiting, sync.pending), style = MaterialTheme.typography.bodyMedium)
+            is SyncBanner.SignInRequired -> {
+                Text(
+                    stringResource(R.string.sync_sign_in_required, sync.pending),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                )
+                OutlinedButton(onClick = onSignInToUpload, modifier = Modifier.fillMaxWidth()) {
+                    Text(stringResource(R.string.sync_sign_in_button))
+                }
+            }
         }
         Button(onClick = { confirm = true }, modifier = Modifier.fillMaxWidth()) {
             Text(stringResource(R.string.mission_end_button))

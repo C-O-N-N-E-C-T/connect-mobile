@@ -38,6 +38,15 @@
     <string name="lock_open_settings">Güvenlik ayarlarını aç</string>
     <string name="lock_unavailable">Kilit açma şu anda kullanılamıyor. Biraz sonra tekrar deneyin.</string>
 
+    <!-- OSP-76: bağlantı dönüşü yükleme kapısı -->
+    <string name="sync_waiting">%1$d kazazede kaydı yüklenmeyi bekliyor. Kayıtlar bu cihazda korunuyor ve otomatik olarak tekrar denenecek.</string>
+    <string name="sync_sign_in_required">Kuyruktaki %1$d kazazede kaydını yüklemek için çevrimiçi giriş yapın. Kayıtlar o zamana kadar bu cihazda korunur.</string>
+    <string name="sync_sign_in_button">Çevrimiçi giriş yap</string>
+    <string name="sync_pending_after_sign_in">Giriş yaptıktan sonra kuyruktaki %1$d kazazede kaydı yüklenecek.</string>
+    <string name="sync_locked_title">Kurtarıcı Modu kilitlendi</string>
+    <string name="sync_locked_records_kept">Gönderilmemiş %1$d kazazede kaydı bu cihazda şifreli olarak duruyor ve silinmedi.</string>
+    <string name="sync_locked_sign_in">Tekrar giriş yap</string>
+
     <string name="error_invalid_input">E-posta adresinizi ve parolanızı girin.</string>
     <string name="error_bad_credentials">E-posta veya parola hatalı.</string>
     <string name="error_account_disabled">Bu hesap devre dışı. Yöneticinizle iletişime geçin.</string>

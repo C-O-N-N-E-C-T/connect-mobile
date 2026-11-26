@@ -19,11 +19,30 @@ interface SupabaseAuthGateway {
 
     /** Clears the in-memory + persisted Supabase session and stops auto-refresh. */
     suspend fun clearLocalSession()
+
+    /**
+     * OSP-76 step 1: refreshes the stored session NOW (an explicit SDK refreshSession) and returns the
+     * new access token. Called before every upload burst after connectivity returns, so an expired
+     * token is never sent to POST /api/v1/sync. Never throws.
+     */
+    suspend fun refreshSession(): RefreshOutcome
 }
 
 sealed interface SignInOutcome {
     data object Success : SignInOutcome
     data class Failure(val error: AuthError) : SignInOutcome
+}
+
+/** OSP-76: result of [SupabaseAuthGateway.refreshSession]. */
+sealed interface RefreshOutcome {
+    /** A freshly issued access token. */
+    data class Refreshed(val accessToken: String) : RefreshOutcome
+
+    /** Network error, timeout or Auth server 5xx/429: keep the queue and retry with backoff (step 2). */
+    data object Transient : RefreshOutcome
+
+    /** No session, or the refresh token was refused: the rescuer must sign in online again (step 3). */
+    data object Rejected : RefreshOutcome
 }
 
 /** Pure mapping of Supabase Auth failures (design section 3.6). */

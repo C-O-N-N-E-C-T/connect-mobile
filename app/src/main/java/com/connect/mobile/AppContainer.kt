@@ -18,6 +18,7 @@ import com.connect.mobile.auth.grant.OfflineGrantPolicy
 import com.connect.mobile.config.AppConfig
 import com.connect.mobile.data.backend.AuthBackend
 import com.connect.mobile.data.backend.AuthBackendFactory
+import com.connect.mobile.data.backend.KtorSyncBackend
 import com.connect.mobile.data.crypto.AndroidKeystoreMasterKey
 import com.connect.mobile.data.db.DbKeyProvider
 import com.connect.mobile.data.device.DeviceIdProvider
@@ -33,6 +34,8 @@ import com.connect.mobile.data.supabase.LazyAuthGateway
 import com.connect.mobile.data.supabase.NotConfiguredAuthGateway
 import com.connect.mobile.data.supabase.SupabaseAuthGateway
 import com.connect.mobile.data.supabase.SupabaseKtAuthGateway
+import com.connect.mobile.sync.EmptyOutboxStore
+import com.connect.mobile.sync.ReconnectSync
 import com.connect.mobile.ui.RescuerAuthViewModel
 import com.connect.mobile.util.AppLogger
 import kotlinx.coroutines.CoroutineScope
@@ -130,6 +133,16 @@ class AppContainer(context: Context) {
         LogoutUseCase(authGateway, authBackend, sessionStore, grantAnchors = grantAnchorStore)
     }
 
+    // OSP-76: reconnection gate. The queue itself is Epic E8; until then nothing is queued.
+    private val reconnectSync by lazy {
+        ReconnectSync(
+            gateway = authGateway,
+            backend = KtorSyncBackend(httpClient, config.apiBaseUrl, log),
+            outbox = EmptyOutboxStore, // TODO(E8): the encrypted Room/SQLCipher queue
+            logout = logoutUseCase,
+        )
+    }
+
     fun newRescuerAuthViewModel() = RescuerAuthViewModel(
         login = LoginUseCase(
             isConfigured = config.isConfigured,
@@ -143,6 +156,8 @@ class AppContainer(context: Context) {
         bootstrap = SessionBootstrap(sessionStore, deviceIdProvider, logoutUseCase),
         grantChecker = grantChecker,
         appLock = appLock,
+        sync = reconnectSync,
+        online = networkMonitor.isOnline,
     )
 
     /**

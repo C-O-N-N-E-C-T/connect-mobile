@@ -19,9 +19,13 @@ import com.connect.mobile.data.backend.BackendResult
 import com.connect.mobile.data.backend.SessionResponse
 import com.connect.mobile.data.device.DeviceIdProvider
 import com.connect.mobile.data.session.StoredGrant
+import com.connect.mobile.sync.SyncOutcome
+import com.connect.mobile.sync.SyncRunner
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
@@ -56,7 +60,10 @@ class RescuerAuthViewModelTest {
      * runCurrent, not advanceUntilIdle: in MissionActive the expiry watcher would otherwise run the
      * virtual clock up to expires_at.
      */
-    private fun TestScope.newViewModel(): RescuerAuthViewModel {
+    private fun TestScope.newViewModel(
+        sync: SyncRunner? = null,
+        online: StateFlow<Boolean> = MutableStateFlow(false),
+    ): RescuerAuthViewModel {
         val clock = SchedulerClock(testScheduler)
         val mono = SchedulerMonotonicClock(testScheduler)
         val deviceIds = DeviceIdProvider(store) { "Phone" }
@@ -65,7 +72,8 @@ class RescuerAuthViewModelTest {
         val bootstrap = SessionBootstrap(store, deviceIds, logout)
         val checker = OfflineGrantChecker(OfflineGrantPolicy(), anchors, deviceIds, clock, mono)
         appLock = AppLockState(mono)
-        return RescuerAuthViewModel(login, logout, bootstrap, checker, appLock).also { runCurrent() }
+        return RescuerAuthViewModel(login, logout, bootstrap, checker, appLock, sync = sync, online = online)
+            .also { runCurrent() }
     }
 
     private fun grant(expiresAt: Instant) = StoredGrant("u1", FakeBackend.DEVICE_ID, "rescuer", TEST_NOW.minusSeconds(60), expiresAt)
@@ -237,5 +245,39 @@ class RescuerAuthViewModelTest {
         vm.submit()
         advanceUntilIdle()
         assertTrue(vm.locked.value)
+    }
+
+    /** OSP-73 x OSP-76: a Valid grant + connectivity runs the upload gate. */
+    @Test fun validGrantOnlineRunsSync() = runTest(dispatcher) {
+        store.writeGrant(grant(TEST_NOW.plusSeconds(3600)))
+        var runs = 0
+        newViewModel(sync = { runs++; SyncOutcome.Completed(0) }, online = MutableStateFlow(true))
+        assertEquals(1, runs)
+    }
+
+    /** OSP-73: CLOUD_SYNC is locked when the offline window is over, even while online. */
+    @Test fun expiredGrantNeverSyncs() = runTest(dispatcher) {
+        val g = grant(TEST_NOW.minusSeconds(1))
+        store.writeGrant(g)
+        var runs = 0
+        val vm = newViewModel(sync = { runs++; SyncOutcome.Completed(0) }, online = MutableStateFlow(true))
+        assertEquals(AuthUiState.MissionActive(g, expired = true), vm.state.value)
+        assertEquals(0, runs)
+        assertEquals(g, store.readGrant()) // nothing deleted
+    }
+
+    /** OSP-73: when the window ends during a mission, retries stop; the queue is not touched. */
+    @Test fun syncStopsWhenWindowEnds() = runTest(dispatcher) {
+        store.writeGrant(grant(TEST_NOW.plusSeconds(120)))
+        var runs = 0
+        val vm = newViewModel(sync = { runs++; SyncOutcome.RetryLater(3) }, online = MutableStateFlow(true))
+        assertEquals(1, runs)
+        advanceTimeBy(121_000)
+        runCurrent()
+        assertTrue((vm.state.value as AuthUiState.MissionActive).expired)
+        val afterExpiry = runs
+        advanceTimeBy(3_600_000)
+        runCurrent()
+        assertEquals(afterExpiry, runs)
     }
 }
