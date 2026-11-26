@@ -83,3 +83,8 @@ if (appLock.isGuarded(Capability.VICTIM_PII_DETAIL)) { /* önce BiometricGate */
   kalır (fail-closed).
 - Çapa okunamazsa (Keystore geçici hatası) durum `STATE_UNAVAILABLE` sayılır, PII/senkron kilitlenir,
   bir sonraki kontrol (en geç 60 sn) yeniden dener.
+- Telefon kapalıyken geçen süre yalnızca duvar saatiyle sayılır. Telefon kapalı kalıp açılışta saat son
+  görülen zamana geri çekilirse pencere, kapalı kalınan süre kadar uzayabilir. Çevrimdışıyken güvenilir
+  zaman kaynağı olmadığı için kabul edilen bir sınırdır (`expires_at` ve geri alma kontrolleri sürer).
+- Saat ileri alınıp süre dolarsa (`WALL_CLOCK` / `MONOTONIC_WINDOW`) saat düzeltilse de pencere geri
+  açılmaz; harcanan süre çapaya yazılmıştır. Yeniden çevrimiçi giriş gerekir (fail-closed, bilinçli).
