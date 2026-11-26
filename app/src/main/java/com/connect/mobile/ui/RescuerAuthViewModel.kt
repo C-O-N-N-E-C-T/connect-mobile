@@ -131,6 +131,21 @@ class RescuerAuthViewModel(
     /** OSP-73: yalnızca BiometricPrompt başarılı olunca çağrılır. */
     fun onUnlocked() = appLock.unlock()
 
+    /**
+     * OSP-73: kilit ekranından şifreyle çevrimiçi giriş (biyometri / ekran kilidi kullanılamıyorsa).
+     * Kilit AÇILMAZ ve grant SİLİNMEZ: yalnızca başarılı giriş kilidi açar; giriş olmazsa yeniden
+     * başlatma kilit ekranına geri döner. Kuyruktaki kayıtların sayısı giriş ekranında gösterilir.
+     */
+    fun signInFromLock() {
+        val mission = _state.value as? AuthUiState.MissionActive ?: return
+        if (!appLock.locked.value) return
+        val pending = (mission.sync as? SyncBanner.SignInRequired)?.pending
+            ?: (mission.sync as? SyncBanner.Waiting)?.pending
+            ?: 0
+        stopMissionJobs()
+        _state.value = AuthUiState.LoginIdle(pendingUploads = pending)
+    }
+
     /** Ignored outside LoginIdle, so double taps cannot start two logins. */
     fun submit() {
         val idle = _state.value as? AuthUiState.LoginIdle ?: return

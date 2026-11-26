@@ -37,6 +37,8 @@
     <string name="lock_no_credential">Saha Kurtarıcısı Modunu kullanmak için bu cihazda bir ekran kilidi (PIN, desen, parola veya parmak izi) ayarlayın.</string>
     <string name="lock_open_settings">Güvenlik ayarlarını aç</string>
     <string name="lock_unavailable">Kilit açma şu anda kullanılamıyor. Biraz sonra tekrar deneyin.</string>
+    <string name="lock_retry">Yeniden dene</string>
+    <string name="lock_sign_in_online">Şifreyle çevrimiçi giriş yap</string>
 
     <!-- OSP-76: bağlantı dönüşü yükleme kapısı -->
     <string name="sync_waiting">%1$d kazazede kaydı yüklenmeyi bekliyor. Kayıtlar bu cihazda korunuyor ve otomatik olarak tekrar denenecek.</string>

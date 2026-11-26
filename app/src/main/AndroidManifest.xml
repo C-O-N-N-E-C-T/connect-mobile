@@ -25,5 +25,14 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <!-- OSP-73: saat elle değiştirildiğinde grant çapasını monoton saatle güncelle (süre uzatmaya karşı). -->
+        <receiver
+            android:name=".system.ClockChangeReceiver"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.TIME_SET" />
+            </intent-filter>
+        </receiver>
     </application>
 </manifest>

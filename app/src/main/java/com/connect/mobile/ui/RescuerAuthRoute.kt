@@ -38,7 +38,11 @@ fun RescuerAuthRoute(viewModel: RescuerAuthViewModel) {
             AuthUiState.LoggingOut -> Busy(R.string.mission_logging_out, modifier)
             // OSP-73: Field Rescuer Mode only after biometric / device credential (restart, >15 min background).
             is AuthUiState.MissionActive -> if (locked) {
-                BiometricGate(onUnlocked = viewModel::onUnlocked, modifier = modifier)
+                BiometricGate(
+                    onUnlocked = viewModel::onUnlocked,
+                    onSignInOnline = viewModel::signInFromLock,
+                    modifier = modifier,
+                )
             } else {
                 MissionScreen(
                     grant = s.grant,

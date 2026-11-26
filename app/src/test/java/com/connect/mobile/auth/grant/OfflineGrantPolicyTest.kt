@@ -11,6 +11,7 @@ import com.connect.mobile.auth.grant.GrantStatus.Expired.Reason.MONOTONIC_WINDOW
 import com.connect.mobile.auth.grant.GrantStatus.Expired.Reason.WALL_CLOCK
 import com.connect.mobile.data.session.StoredGrant
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertThrows
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -149,7 +150,7 @@ class OfflineGrantPolicyTest {
         assertEquals(GrantStatus.Expired(CLOCK_ROLLBACK), check())
     }
 
-    /** Geri alınmış saatle çapa kaydedilmez; saat düzelince kapalı geçen süre de sayılır. */
+    /** Geri alınmış saatte harcanan süre ve son görülen zaman korunur; saat düzelince kapalı süre de sayılır. */
     @Test fun rolledBackClockAfterRebootDoesNotLoseOffTime() {
         val short = OfflineGrantPolicy(offlineGrantHours = 24)
         check(p = short)
@@ -159,7 +160,8 @@ class OfflineGrantPolicyTest {
         mono.reboot()
         now = auth.plus(hours(2)) // açılışta saat sıfırlanmış / geri alınmış
         assertEquals(GrantStatus.Expired(CLOCK_ROLLBACK), check(p = short))
-        assertEquals(before, anchor)
+        assertEquals(before!!.consumedAtAnchorMillis, anchor!!.consumedAtAnchorMillis)
+        assertEquals(before.lastSeenWallMillis, anchor!!.lastSeenWallMillis)
         mono.advance(Duration.ofMinutes(1))
         now = auth.plus(hours(30)) // NTP saati düzeltti: telefon 20 saat kapalı kalmış
         assertEquals(GrantStatus.Expired(MONOTONIC_WINDOW), check(p = short))
@@ -181,6 +183,37 @@ class OfflineGrantPolicyTest {
     @Test fun clockBeforeAuthenticatedAtIsRollback() {
         now = auth.minus(Duration.ofMinutes(10))
         assertEquals(GrantStatus.Expired(CLOCK_ROLLBACK), check())
+        assertNull(anchor) // çapasızken geri alınmış saat son görülen zaman olarak yazılmaz
+    }
+
+    /**
+     * Review senaryosu: uygulama kapalıyken 70 sa geçer, saat geri alınır, telefon yeniden başlatılır.
+     * Saat değişikliği yayını (ClockChangeReceiver) aynı açılışta kontrol çalıştırır; monoton saat 70
+     * saati görür ve çapaya yazar. Yeniden başlatmadan sonra pencere yeniden açılmaz.
+     */
+    @Test fun clockChangeCheckKeepsUptimeAcrossReboot() {
+        check()
+        mono.advance(hours(70)) // uygulama kapalı, kontrol yok
+        now = auth // saat "son görülen" zamana geri alındı -> ACTION_TIME_CHANGED -> check()
+        assertEquals(GrantStatus.Valid(hours(2).toMillis()), check())
+        mono.reboot()
+        now = auth.plus(hours(1))
+        assertEquals(GrantStatus.Valid(hours(2).toMillis()), check())
+        pass(hours(2))
+        assertEquals(GrantStatus.Expired(MONOTONIC_WINDOW), check())
+    }
+
+    /** Saat çok geri alınınca (tespit edilir) de harcanan süre kaydedilir; sonra saati düzeltmek işe yaramaz. */
+    @Test fun deepRollbackStillRecordsConsumedTime() {
+        check()
+        mono.advance(hours(70))
+        now = auth.minus(Duration.ofDays(1))
+        assertEquals(GrantStatus.Expired(CLOCK_ROLLBACK), check())
+        assertEquals(hours(70).toMillis(), anchor!!.consumedAtAnchorMillis)
+        assertEquals(auth.toEpochMilli(), anchor!!.lastSeenWallMillis)
+        mono.reboot()
+        now = auth // yeniden başlatma sonrası saat son görülen zamana getirildi
+        assertEquals(GrantStatus.Valid(hours(2).toMillis()), check())
     }
 
     @Test fun smallBackwardCorrectionWithinSkewIsTolerated() {

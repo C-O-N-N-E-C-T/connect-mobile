@@ -61,7 +61,7 @@ sealed interface Access {
     data object ReauthRequired : Access
 }
 
-/** [anchor]: kaydedilmesi gereken güncel çapa (grant yoksa, uyuşmuyorsa veya saat geri alındıysa null). */
+/** [anchor]: kaydedilmesi gereken güncel çapa (grant yoksa, uyuşmuyorsa veya çapasız geri almada null). */
 data class GrantEvaluation(val status: GrantStatus, val anchor: GrantAnchor?)
 
 /**
@@ -128,10 +128,12 @@ class OfflineGrantPolicy(offlineGrantHours: Long = DEFAULT_OFFLINE_GRANT_HOURS) 
             consumed >= windowMillis -> GrantStatus.Expired(GrantStatus.Expired.Reason.MONOTONIC_WINDOW)
             else -> GrantStatus.Valid(minOf(windowMillis - consumed, expiresMs - nowMs))
         }
-        // Geri alınmış saatle hesaplanan çapa kaydedilmez: eski çapa (açılış sayacı, harcanan süre,
-        // son görülen zaman) korunur, saat düzelince kapalı geçen süre de doğru sayılır.
+        // Geri alma anında da çapa KAYDEDİLİR: harcanan süre (monoton saatle ölçülen) kaybolmamalı, yoksa
+        // "saati çok geri al -> yeniden başlat -> saati son görülen zamana getir" sırasıyla pencere uzardı.
+        // Son görülen zaman geriye gitmez (yukarıdaki maxOf), böylece geri alma tespiti de korunur.
+        // Çapa yokken (own == null) geri alınmış saat son görülen zaman olarak yazılmaz.
         val rolledBack = status is GrantStatus.Expired && status.reason == GrantStatus.Expired.Reason.CLOCK_ROLLBACK
-        return GrantEvaluation(status, if (rolledBack) null else next)
+        return GrantEvaluation(status, if (rolledBack && own == null) null else next)
     }
 
     fun access(capability: Capability, status: GrantStatus): Access = when {

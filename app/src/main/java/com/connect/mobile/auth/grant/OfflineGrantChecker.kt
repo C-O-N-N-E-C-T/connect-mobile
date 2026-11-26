@@ -3,11 +3,15 @@ package com.connect.mobile.auth.grant
 import com.connect.mobile.data.device.DeviceIdProvider
 import com.connect.mobile.data.session.StoredGrant
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.time.Clock
 
 /**
  * Policy'yi gerçek saatlere ve çapa deposuna bağlar (OSP-73). Ekranlar (Kurtarıcı, ileride PII ve
- * senkron) yalnızca bunu kullanır: [check] ile durum, [access] ile yetenek kararı.
+ * senkron) yalnızca bunu kullanır: [check] ile durum, [access] ile yetenek kararı. Saat değişikliği
+ * yayını ([com.connect.mobile.system.ClockChangeReceiver]) da [check] çağırır; ikisi aynı anda
+ * çalışırsa çapa oku-hesapla-yaz adımı [mutex] ile sıraya girer.
  */
 class OfflineGrantChecker(
     private val policy: OfflineGrantPolicy,
@@ -16,7 +20,11 @@ class OfflineGrantChecker(
     private val wallClock: Clock,
     private val monotonic: MonotonicClock,
 ) {
-    suspend fun check(grant: StoredGrant?): GrantStatus {
+    private val mutex = Mutex()
+
+    suspend fun check(grant: StoredGrant?): GrantStatus = mutex.withLock { checkLocked(grant) }
+
+    private suspend fun checkLocked(grant: StoredGrant?): GrantStatus {
         val anchor = try {
             anchors.read()
         } catch (e: CancellationException) {

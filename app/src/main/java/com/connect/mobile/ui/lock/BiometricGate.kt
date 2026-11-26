@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,9 +39,12 @@ import com.connect.mobile.ui.common.SupplementaryDisclaimer
  * "Kilidi Aç" ekranı (OSP-73). Kurtarıcı Modu ve PII ekranlarından önce gösterilir; ekran açılınca
  * BiometricPrompt kendiliğinden bir kez açılır. Parmak izi / yüz / PIN uygulamaya hiç gelmez:
  * yalnızca Android'in "başarılı" sonucu gelir.
+ *
+ * Çıkış yolu her durumda vardır: biyometri geçici olarak kullanılamıyorsa "Yeniden dene", hiç
+ * olmuyorsa [onSignInOnline] (şifreyle çevrimiçi giriş; başarılı giriş kilidi açar, grant silinmez).
  */
 @Composable
-fun BiometricGate(onUnlocked: () -> Unit, modifier: Modifier = Modifier) {
+fun BiometricGate(onUnlocked: () -> Unit, onSignInOnline: () -> Unit, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val activity = remember(context) { context.findFragmentActivity() }
     val authenticators = remember { allowedAuthenticators() }
@@ -112,9 +116,20 @@ fun BiometricGate(onUnlocked: () -> Unit, modifier: Modifier = Modifier) {
                 }
             }
 
-            else -> Text(stringResource(R.string.lock_unavailable), color = MaterialTheme.colorScheme.error)
+            else -> {
+                // Ör. sensör meşgul / güvenlik güncellemesi gerekli / durum bilinmiyor: yeniden okunur.
+                Text(stringResource(R.string.lock_unavailable), color = MaterialTheme.colorScheme.error)
+                Button(
+                    onClick = { availability = biometricManager.canAuthenticate(authenticators) },
+                    modifier = Modifier.fillMaxWidth(),
+                ) { Text(stringResource(R.string.lock_retry)) }
+            }
         }
         errorText?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+        // Biyometri / ekran kilidi hiç çalışmazsa kurtarıcı dışarıda kalmasın: şifreyle çevrimiçi giriş.
+        OutlinedButton(onClick = onSignInOnline, modifier = Modifier.fillMaxWidth()) {
+            Text(stringResource(R.string.lock_sign_in_online))
+        }
         SupplementaryDisclaimer(modifier = Modifier.fillMaxWidth())
     }
 }

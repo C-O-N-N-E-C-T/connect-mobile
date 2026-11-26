@@ -18,7 +18,8 @@ Jira: OSP-73 (epic OSP-56 / E10). Bağımlılıklar: OSP-60 (grant veren backend
 | `MonotonicClock` | `auth/grant/Clocks.kt` | `SystemClock.elapsedRealtime()` + `Settings.Global.BOOT_COUNT` |
 | `OfflineGrantPolicy` | `auth/grant/OfflineGrantPolicy.kt` | Saf karar mantığı; hiçbir şey silmez. `evaluate()` durum, `access()` yetenek kararı |
 | `GrantAnchor` | `auth/grant/GrantAnchor.kt` | Pencereden harcanan sürenin monoton saat kaydı |
-| `DataStoreGrantAnchorStore` | `data/grant/DataStoreGrantAnchorStore.kt` | Çapa için ayrı şifreli dosya (`connect_grant_anchor.enc`) |
+| `DataStoreGrantAnchorStore` | `data/grant/DataStoreGrantAnchorStore.kt` | Çapa için ayrı şifreli dosya (`connect_grant_anchor.enc`, ayrı anahtar) |
+| `ClockChangeReceiver` | `system/ClockChangeReceiver.kt` | Saat değişince çapayı monoton saatle günceller |
 | `OfflineGrantChecker` | `auth/grant/OfflineGrantChecker.kt` | Policy + gerçek saatler + çapa deposu; ekranların tek giriş noktası |
 | `AppLockState` | `auth/grant/AppLockState.kt` | Süreç başında kilitli; >15 dk arka plan sonrası yeniden kilit |
 | `BiometricGate` | `ui/lock/BiometricGate.kt` | "Kilidi Aç" ekranı + BiometricPrompt |
@@ -32,6 +33,11 @@ gösterir; `LogoutUseCase` grant ile birlikte çapayı da siler.
 - Yeniden başlatmada (BOOT_COUNT değişti veya elapsedRealtime geriledi):
   `harcanan = max(çapa.harcanan, şimdi − authenticated_at)`; kapalı geçen süre duvar saatiyle sayılır.
 - Geri alma: `şimdi < authenticated_at − 5 dk` veya `şimdi < son_görülen − 5 dk` → süre dolmuş sayılır.
+  Geri almada da çapa yazılır (harcanan süre korunur, son görülen zaman geri gitmez); yalnızca çapa hiç
+  yokken yazılmaz.
+- Saat değişikliği: `ClockChangeReceiver` (`ACTION_TIME_CHANGED`, uygulama kapalıyken de çalışır) aynı
+  açılışta kontrol çalıştırır; monoton saatle harcanan süre yeniden başlatmadan önce çapaya yazılır.
+  Eşzamanlı kontroller `OfflineGrantChecker` içinde `Mutex` ile sıraya girer.
 - Süre doldu: `şimdi ≥ expires_at` VEYA `harcanan ≥ pencere` VEYA geri alma.
 - Çapa `grantKey` (user, device, authenticated_at, expires_at) ile tek grant'e bağlıdır. Çapa yoksa
   (ör. OSP-74 sürümünden kalan grant) duvar saatinden kurulur.
@@ -56,13 +62,18 @@ yerel olarak siler ve `GrantInvalid` hatasıyla giriş ekranını gösterir. Kur
 - Kilit `ProcessLifecycleOwner` gözlemcisiyle ana iş parçacığında senkron güncellenir; kilit ilk kare
   çizilmeden devreye girer. Süre monoton saatle ölçülür.
 - Ekran kilidi yoksa Kurtarıcı Modu açılmaz; "Güvenlik ayarlarını aç" butonu gösterilir.
+- Biyometri geçici olarak kullanılamıyorsa "Yeniden dene" butonu durumu yeniden okur. Her durumda
+  "Şifreyle çevrimiçi giriş yap" vardır: giriş ekranına gider, grant silinmez, kilit açılmaz; yalnızca
+  başarılı giriş kilidi açar (başarısızsa yeniden başlatma kilit ekranına döner).
 - Başarılı çevrimiçi giriş (Supabase şifresi + backend grant) kilidi açar; kullanıcıdan şifreden hemen sonra
   ayrıca PIN istenmez. Başarısız giriş kilidi açmaz.
 
 ## 6. Kararlar
 1. `androidx.biometric` 1.4.0-rc01 (1.1.0 2021'den kalma). `androidx.fragment` 1.9.1 açıkça eklendi.
-2. Çapa ayrı şifreli DataStore'da: OSP-75 seri hale getiricisi, oturum ana anahtarı, farklı associated
-   data (`connect_grant_anchor.v1`). `discardKey` burada no-op; anahtarın yaşam döngüsü oturum deposunda.
+2. Çapa ayrı şifreli DataStore'da: OSP-75 seri hale getiricisi, KENDİ Keystore anahtarı
+   (`connect_grant_anchor_key`) ve farklı associated data (`connect_grant_anchor.v1`). Oturum anahtarı
+   kalıcı hatada silinip yeniden üretildiğinde çapa deposu takılmaz; çapa anahtarı bozulursa yalnızca o
+   silinir, çapa duvar saatinden yeniden kurulur.
 3. Yeniden başlatma sonrası duvar saati + "son görülen zaman" kontrolü.
 4. Ekran kilidi yoksa Kurtarıcı Modu engellenir; Kurban/Röle etkilenmez.
 5. Rol kuralı issue'daki gibi `role == "rescuer"`; koordinatör sahada kurtarıcı olacaksa ayrı hesap gerekir.
@@ -83,8 +94,12 @@ if (appLock.isGuarded(Capability.VICTIM_PII_DETAIL)) { /* önce BiometricGate */
   kalır (fail-closed).
 - Çapa okunamazsa (Keystore geçici hatası) durum `STATE_UNAVAILABLE` sayılır, PII/senkron kilitlenir,
   bir sonraki kontrol (en geç 60 sn) yeniden dener.
-- Telefon kapalıyken geçen süre yalnızca duvar saatiyle sayılır. Telefon kapalı kalıp açılışta saat son
-  görülen zamana geri çekilirse pencere, kapalı kalınan süre kadar uzayabilir. Çevrimdışıyken güvenilir
-  zaman kaynağı olmadığı için kabul edilen bir sınırdır (`expires_at` ve geri alma kontrolleri sürer).
+- Monoton saat yeniden başlatmada sıfırlanır; çapa uygulamanın son çalıştığı (veya saatin son
+  değiştirildiği) anda kalır. Saat değiştirilmeden geçen süre + telefonun kapalı kaldığı süre yeniden
+  başlatmadan sonra yalnızca duvar saatiyle sayılır. Saat değişikliği `ClockChangeReceiver` ile
+  yakalandığı için "uygulama kapalı 70 sa -> saati geri al -> yeniden başlat" senaryosu kapanır
+  (`clockChangeCheckKeepsUptimeAcrossReboot`). Açık kalan: telefon KAPALIYKEN geçen süre, açılışta saat son
+  görülen zamana çekilirse görülemez (çevrimdışı güvenilir zaman kaynağı yok). İleride: GNSS zamanı alt
+  sınır olarak, ya da periyodik çapa güncellemesi (WorkManager; yeni bağımlılık, ekip onayı gerekir).
 - Saat ileri alınıp süre dolarsa (`WALL_CLOCK` / `MONOTONIC_WINDOW`) saat düzeltilse de pencere geri
   açılmaz; harcanan süre çapaya yazılmıştır. Yeniden çevrimiçi giriş gerekir (fail-closed, bilinçli).

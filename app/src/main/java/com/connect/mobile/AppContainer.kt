@@ -38,12 +38,15 @@ import com.connect.mobile.sync.EmptyOutboxStore
 import com.connect.mobile.sync.ReconnectSync
 import com.connect.mobile.ui.RescuerAuthViewModel
 import com.connect.mobile.util.AppLogger
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.time.Clock
 
@@ -100,12 +103,12 @@ class AppContainer(context: Context) {
         })
     }
 
-    // OSP-73: grant çapası ayrı şifreli dosyada (files/datastore/connect_grant_anchor.enc). Oturum
-    // ana anahtarı paylaşılır ama associated data farklıdır; discardKey burada no-op (anahtarın
-    // yaşam döngüsünü oturum deposu yönetir).
+    // OSP-73: grant çapası ayrı şifreli dosyada (files/datastore/connect_grant_anchor.enc) ve KENDİ
+    // Keystore anahtarıyla (GRANT_ANCHOR_ALIAS). Anahtar kalıcı olarak bozulursa yalnızca o silinir;
+    // çapa boşalır ve duvar saatinden yeniden kurulur. Oturum anahtarının yaşam döngüsünden bağımsızdır.
     private val grantAnchorStore: GrantAnchorStore = DataStoreGrantAnchorStore.create(
         produceFile = { appContext.dataStoreFile(DataStoreGrantAnchorStore.FILE_NAME) },
-        aeadSupplier = { AndroidKeystoreMasterKey(AndroidKeystoreMasterKey.SESSION_ALIAS).getOrCreateAead() },
+        aeadSupplier = keystoreAeadSupplier(AndroidKeystoreMasterKey.GRANT_ANCHOR_ALIAS),
     )
 
     private val autoRefreshController = AutoRefreshController(networkMonitor.isOnline, isForeground)
@@ -143,6 +146,25 @@ class AppContainer(context: Context) {
         )
     }
 
+    /**
+     * OSP-73: saat değişikliği yayınından çağrılır ([com.connect.mobile.system.ClockChangeReceiver]).
+     * Kayıtlı grant varsa policy'yi çalıştırıp çapayı (harcanan süre, monoton saat) günceller.
+     * Hiçbir şey silmez; hata olursa sessizce geçer, sonraki kontrol yeniden dener.
+     */
+    fun recordGrantTime(onDone: () -> Unit) {
+        appScope.launch {
+            try {
+                withTimeoutOrNull(RECEIVER_BUDGET_MS) { grantChecker.check(sessionStore.readGrant()) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Depo okunamadı: fail-closed durum zaten bir sonraki kontrolde ele alınır.
+            } finally {
+                onDone()
+            }
+        }
+    }
+
     fun newRescuerAuthViewModel() = RescuerAuthViewModel(
         login = LoginUseCase(
             isConfigured = config.isConfigured,
@@ -164,8 +186,10 @@ class AppContainer(context: Context) {
      * Oturum deposunun ana anahtarı. Anahtar kalıcı olarak kullanılamazsa (ör. geçersiz kılındı) silinir
      * ve yenisi üretilir: depo fail-closed boşalır, yeniden giriş istenir (DB anahtarına dokunmaz).
      */
-    private fun sessionAeadSupplier(): AeadSupplier {
-        val key = AndroidKeystoreMasterKey(AndroidKeystoreMasterKey.SESSION_ALIAS)
+    private fun sessionAeadSupplier(): AeadSupplier = keystoreAeadSupplier(AndroidKeystoreMasterKey.SESSION_ALIAS)
+
+    private fun keystoreAeadSupplier(alias: String): AeadSupplier {
+        val key = AndroidKeystoreMasterKey(alias)
         return object : AeadSupplier {
             override fun get() = key.getOrCreateAead()
             override fun discardKey() = key.deleteKey()
@@ -185,5 +209,10 @@ class AppContainer(context: Context) {
         // Gateway tembel oluşturulur; denetleyici ancak şimdi yönetebileceği bir oturuma kavuşur.
         autoRefreshController.attach(gateway)
         return gateway
+    }
+
+    private companion object {
+        /** goAsync() yaklaşık 10 sn verir; bundan önce bitmeli. */
+        const val RECEIVER_BUDGET_MS = 8_000L
     }
 }

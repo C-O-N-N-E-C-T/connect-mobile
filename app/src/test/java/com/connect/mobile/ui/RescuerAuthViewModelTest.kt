@@ -280,4 +280,26 @@ class RescuerAuthViewModelTest {
         runCurrent()
         assertEquals(afterExpiry, runs)
     }
+
+    /** OSP-73 review: biyometri kullanılamıyorsa kilit ekranından şifreyle giriş; grant silinmez, kilit açılmaz. */
+    @Test fun signInFromLockKeepsGrantAndLock() = runTest(dispatcher) {
+        val g = grant(TEST_NOW.plusSeconds(3600))
+        store.writeGrant(g)
+        val vm = newViewModel()
+        assertTrue(vm.locked.value)
+        vm.signInFromLock()
+        assertEquals(AuthUiState.LoginIdle(), vm.state.value)
+        assertEquals(g, store.readGrant())
+        assertTrue(vm.locked.value)
+        assertTrue(events.isEmpty())
+    }
+
+    @Test fun signInFromLockIgnoredWhenUnlocked() = runTest(dispatcher) {
+        val g = grant(TEST_NOW.plusSeconds(3600))
+        store.writeGrant(g)
+        val vm = newViewModel()
+        vm.onUnlocked()
+        vm.signInFromLock()
+        assertEquals(AuthUiState.MissionActive(g, expired = false), vm.state.value)
+    }
 }

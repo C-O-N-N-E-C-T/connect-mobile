@@ -39,6 +39,8 @@
     <string name="lock_no_credential">Set up a screen lock (PIN, pattern, password or fingerprint) on this device to use Field Rescuer Mode.</string>
     <string name="lock_open_settings">Open security settings</string>
     <string name="lock_unavailable">Unlock is not available right now. Try again in a moment.</string>
+    <string name="lock_retry">Try again</string>
+    <string name="lock_sign_in_online">Sign in online with password</string>
 
     <!-- OSP-76: reconnection upload gate -->
     <string name="sync_waiting">%1$d victim records are waiting to upload. They are kept on this device and retried automatically.</string>

@@ -73,6 +73,12 @@ class AndroidKeystoreMasterKey(private val alias: String) : MasterKey {
         /** Oturum deposu ve DB anahtarı ayrı anahtarlar kullanır: biri kaybolsa diğeri etkilenmez. */
         const val SESSION_ALIAS = "connect_session_master_key"
         const val DB_ALIAS = "connect_db_master_key"
+
+        /**
+         * OSP-73 grant çapası kendi anahtarını kullanır: oturum anahtarı kalıcı hatada silinip yeniden
+         * üretildiğinde çapa deposu eski anahtarı önbellekte tutup takılmaz (ve tersi).
+         */
+        const val GRANT_ANCHOR_ALIAS = "connect_grant_anchor_key"
     }
 }
 
